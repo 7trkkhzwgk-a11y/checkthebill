@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CheckCircle2, Loader2 } from "lucide-react";
@@ -6,8 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { maskSensitive } from "@/lib/mask";
-import { toDate } from "@/lib/extraction";
+import { confirmCheck, generateCheckDrafts } from "@/lib/comparison.functions";
 
 export const Route = createFileRoute("/_authenticated/check/$billId")({
   head: () => ({
@@ -32,6 +32,9 @@ function Cell({ value, onChange, type = "text", disabled }: { value: string; onC
 
 function CheckPage() {
   const { billId } = Route.useParams();
+  const navigate = useNavigate();
+  const confirm = useServerFn(confirmCheck);
+  const draft = useServerFn(generateCheckDrafts);
   const [issuer, setIssuer] = useState<string | null>(null);
   const [billTotal, setBillTotal] = useState<number | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -64,23 +67,15 @@ function CheckPage() {
   async function looksRight() {
     setSaving(true);
     try {
-      for (const date of [...lines.map((l) => l.date), ...proms.map((p) => p.promised_on)]) {
-        if (date && !toDate(date)) throw new Error("Enter dates as YYYY-MM-DD or leave them empty.");
-      }
-      for (const l of lines) {
-        const { id, ...rest } = l;
-        const { error } = await supabase.from("line_items").update({ ...rest, description: maskSensitive(rest.description), reference_no: maskSensitive(rest.reference_no, "identifier"), bank_ref: maskSensitive(rest.bank_ref, "identifier") }).eq("id", id);
-        if (error) throw error;
-      }
-      for (const p of proms) {
-        const { id, ...rest } = p;
-        const { error } = await supabase.from("promises").update({ ...rest, item: maskSensitive(rest.item), source: maskSensitive(rest.source), status_text: maskSensitive(rest.status_text), bank_ref: rest.bank_ref ?? "" }).eq("id", id);
-        if (error) throw error;
-      }
-      const { error } = await supabase.from("bills").update({ issuer: maskSensitive(issuer), bill_total: billTotal, confirmed_at: new Date().toISOString() }).eq("id", billId);
-      if (error) throw error;
+      const validLines = lines.map((line) => {
+        if (line.type !== "charge" && line.type !== "credit") throw new Error("Choose charge or credit for each transaction.");
+        return { ...line, type: line.type };
+      });
+      await confirm({ data: { billId, issuer, billTotal, lines: validLines, promises: proms } });
       setConfirmed(true);
-      toast.success("Lines confirmed");
+      try { await draft({ data: { billId } }); }
+      catch (error) { toast.error(error instanceof Error ? error.message : "The maths is saved, but the message couldn't be written."); }
+      await navigate({ to: "/result/$billId", params: { billId } });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't save");
     } finally {
@@ -159,10 +154,10 @@ function CheckPage() {
       </div>
 
       {confirmed ? (
-        <p className="mt-8 flex items-center gap-2 font-medium text-success"><CheckCircle2 className="h-5 w-5" /> Lines confirmed — ready to compare.</p>
+        <div className="mt-8 space-y-4"><p className="flex items-center gap-2 font-medium text-success"><CheckCircle2 className="h-5 w-5" /> Lines confirmed</p><Button variant="signal" disabled={saving} onClick={looksRight}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}View result</Button></div>
       ) : (
         <Button variant="signal" size="lg" className="mt-8" disabled={saving} onClick={looksRight}>
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Looks right
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {saving ? "Checking and writing…" : "Looks right"}
         </Button>
       )}
     </main>
