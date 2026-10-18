@@ -16,9 +16,9 @@ describe("complete extraction request", () => {
     function verify(node: unknown) {
       if (!node || typeof node !== "object") return;
       const object = node as Record<string, unknown>;
-      if (object.type === "object") {
-        expect(object.additionalProperties).toBe(false);
-        expect(object.required).toEqual(expect.arrayContaining(Object.keys(object.properties as object)));
+      if (object["type"] === "object") {
+        expect(object["additionalProperties"]).toBe(false);
+        expect(object["required"]).toEqual(expect.arrayContaining(Object.keys(object["properties"] as object)));
       }
       for (const child of Object.values(object)) {
         if (Array.isArray(child)) child.forEach(verify); else verify(child);
