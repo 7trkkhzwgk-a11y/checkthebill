@@ -19,6 +19,7 @@ export type Database = {
           bill_total: number | null
           comparison_result: Json | null
           confirmed_at: string | null
+          currency: string | null
           file_link: string
           id: string
           issuer: string | null
@@ -29,6 +30,7 @@ export type Database = {
           bill_total?: number | null
           comparison_result?: Json | null
           confirmed_at?: string | null
+          currency?: string | null
           file_link: string
           id?: string
           issuer?: string | null
@@ -39,6 +41,7 @@ export type Database = {
           bill_total?: number | null
           comparison_result?: Json | null
           confirmed_at?: string | null
+          currency?: string | null
           file_link?: string
           id?: string
           issuer?: string | null
@@ -101,6 +104,7 @@ export type Database = {
         Row: {
           declined_at: string | null
           draft_text: string | null
+          draft_version: number | null
           final_text: string | null
           id: string
           line_id: string
@@ -113,6 +117,7 @@ export type Database = {
         Insert: {
           declined_at?: string | null
           draft_text?: string | null
+          draft_version?: number | null
           final_text?: string | null
           id?: string
           line_id: string
@@ -125,6 +130,7 @@ export type Database = {
         Update: {
           declined_at?: string | null
           draft_text?: string | null
+          draft_version?: number | null
           final_text?: string | null
           id?: string
           line_id?: string
@@ -152,6 +158,7 @@ export type Database = {
           id: string
           item: string | null
           original_charge: number | null
+          pnr: string | null
           promise_kind: string | null
           promised_amount: number | null
           promised_on: string | null
@@ -168,6 +175,7 @@ export type Database = {
           id?: string
           item?: string | null
           original_charge?: number | null
+          pnr?: string | null
           promise_kind?: string | null
           promised_amount?: number | null
           promised_on?: string | null
@@ -184,6 +192,7 @@ export type Database = {
           id?: string
           item?: string | null
           original_charge?: number | null
+          pnr?: string | null
           promise_kind?: string | null
           promised_amount?: number | null
           promised_on?: string | null

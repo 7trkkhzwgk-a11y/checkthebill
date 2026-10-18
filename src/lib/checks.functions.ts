@@ -44,7 +44,7 @@ export const runExtraction = createServerFn({ method: "POST" })
 
     const { data: bill, error: billErr } = await supabase
       .from("bills")
-      .insert({ user_id: userId, issuer: ex.issuer, bill_total: ex.bill_total, file_link: data.bill.path })
+      .insert({ user_id: userId, issuer: ex.issuer, currency: ex.currency, bill_total: ex.bill_total, file_link: data.bill.path })
       .select("id")
       .single();
     if (billErr || !bill) throw new Error(billErr?.message ?? "Couldn't save bill.");

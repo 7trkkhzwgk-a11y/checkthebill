@@ -24,7 +24,7 @@ export const Route = createFileRoute("/_authenticated/check/$billId")({
 });
 
 type Line = { id: string; date: string | null; description: string | null; amount: number | null; type: string | null; reference_no: string | null; bank_ref: string | null };
-type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null };
+type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null; pnr: string | null };
 
 function Cell({ value, onChange, type = "text", disabled }: { value: string; onChange: (v: string) => void; type?: string; disabled: boolean }) {
   return <Input className="h-8 min-w-24 font-mono text-xs" type={type === "date" ? "text" : type} step={type === "number" ? "any" : undefined} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
@@ -37,6 +37,7 @@ function CheckPage() {
   const draft = useServerFn(generateCheckDrafts);
   const [issuer, setIssuer] = useState<string | null>(null);
   const [billTotal, setBillTotal] = useState<number | null>(null);
+  const [currency, setCurrency] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [proms, setProms] = useState<Prom[]>([]);
@@ -46,12 +47,13 @@ function CheckPage() {
   useEffect(() => {
     (async () => {
       const [b, l, p] = await Promise.all([
-        supabase.from("bills").select("issuer, confirmed_at, bill_total").eq("id", billId).single(),
+        supabase.from("bills").select("issuer, confirmed_at, bill_total,currency").eq("id", billId).single(),
         supabase.from("line_items").select("id,date,description,amount,type,reference_no,bank_ref").eq("bill_id", billId).order("date"),
-        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source").eq("bill_id", billId),
+        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source,pnr").eq("bill_id", billId),
       ]);
       setIssuer(b.data?.issuer ?? null);
       setBillTotal(b.data?.bill_total ?? null);
+      setCurrency(b.data?.currency ?? null);
       setConfirmed(!!b.data?.confirmed_at);
       setLines((l.data ?? []) as Line[]);
       setProms((p.data ?? []) as Prom[]);
@@ -71,7 +73,7 @@ function CheckPage() {
         if (line.type !== "charge" && line.type !== "credit") throw new Error("Choose charge or credit for each transaction.");
         return { ...line, type: line.type };
       });
-      await confirm({ data: { billId, issuer, billTotal, lines: validLines, promises: proms } });
+      await confirm({ data: { billId, issuer, billTotal, currency, lines: validLines, promises: proms } });
       setConfirmed(true);
       try { await draft({ data: { billId } }); }
       catch (error) { toast.error(error instanceof Error ? error.message : "The maths is saved, but the message couldn't be written."); }
@@ -123,6 +125,8 @@ function CheckPage() {
       </div>
 
       <div className="mt-4 max-w-sm space-y-2">
+        <Label htmlFor="currency">Currency</Label>
+        <Input id="currency" value={currency ?? ""} maxLength={3} disabled={confirmed} onChange={(e) => setCurrency(e.target.value.toUpperCase() || null)} />
         <Label htmlFor="bill-total">Statement total</Label>
         <Input id="bill-total" type="number" step="any" value={billTotal ?? ""} disabled={confirmed} onChange={(e) => setBillTotal(e.target.value === "" ? null : Number(e.target.value))} />
       </div>
@@ -134,6 +138,8 @@ function CheckPage() {
             {p.source && <p className="mb-4 text-sm text-muted-foreground">{p.source}</p>}
             <div className="grid gap-4 sm:grid-cols-2">
               {([
+                ["source", "Promise issuer", "text"],
+                ["pnr", "PNR", "text"],
                 ["item", "Item", "text"],
                 ["original_charge", "Original charge", "number"],
                 ["promised_amount", "Promised amount / Total refund amount", "number"],

@@ -29,6 +29,13 @@
       "when": 1792362356596,
       "tag": "0003_confirmed_comparison_results",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792363145244,
+      "tag": "0004_document_currency_booking_and_message_format",
+      "breakpoints": true
     }
   ]
 }

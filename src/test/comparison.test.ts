@@ -46,7 +46,8 @@ describe("confirmed refund comparison", () => {
   it("sends only computed facts and full identifiers to message AI", () => {
     const finding = compare().findings[0];
     if (!finding) throw new Error("Missing finding");
-    expect(draftFacts(finding)).toMatchObject({ charged: "7475.40", refund_promised: "7180.00", refund_id: "1234567890123456", transaction_id: "9876543210987654", recipient: "MERCHANT" });
+    expect(draftFacts(finding)).toMatchObject({ refund_promised: "7180.00", refund_id: "1234567890123456", transaction_id: "9876543210987654", missing_amount: "7180.00" });
+    expect(draftFacts(finding)).not.toHaveProperty("kept_by_merchant");
     expect(draftFacts(finding)).not.toHaveProperty("description");
     expect(draftFacts(finding)).not.toHaveProperty("status_text");
   });
