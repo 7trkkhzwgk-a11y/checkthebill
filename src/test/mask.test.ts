@@ -14,4 +14,13 @@ describe("maskSensitive", () => {
   it("leaves amounts and short references alone", () => {
     expect(maskSensitive("Refund REF-4821 $49.99")).toBe("Refund REF-4821 $49.99");
   });
+  it("preserves full numeric identifiers in identifier fields", () => {
+    expect(maskSensitive("4111111111111234", "identifier")).toBe("4111111111111234");
+    expect(maskSensitive("9876543210", "identifier")).toBe("9876543210");
+  });
+  it("preserves transaction, refund, PNR, invoice and reference identifiers in text", () => {
+    for (const label of ["Transaction ID", "Refund ID", "PNR", "Invoice number", "Reference number", "Bank Reference Id"]) {
+      expect(maskSensitive(`${label}: 4111111111111234`)).toBe(`${label}: 4111111111111234`);
+    }
+  });
 });

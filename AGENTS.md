@@ -11,3 +11,4 @@
 
 - Document AI extraction runs only in server functions (src/lib/checks.functions.ts → extract.server.ts) and all text passes maskSensitive before saving — why: privacy rules require no AI calls or unmasked data from the browser.
 - Uploaded files live in the private "documents" bucket under <user_id>/; tables store only the storage path — why: per-user storage RLS.
+- Extraction schemas and normalization live in a browser-safe shared module used by the server persistence boundary — why: deterministic transaction filtering and identifier-safe masking must be independently testable.
