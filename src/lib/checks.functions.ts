@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { normalizeExtraction } from "@/lib/extraction";
+import { validateDocumentSize } from "@/lib/extraction-errors";
 
 type Input = {
   bill: { path: string; name: string; mime: string };
@@ -35,6 +36,7 @@ export const runExtraction = createServerFn({ method: "POST" })
     const load = async (f: Input["bill"]) => {
       const { data: blob, error } = await supabase.storage.from("documents").download(f.path);
       if (error || !blob) throw new Error("Couldn't read uploaded file.");
+      validateDocumentSize(blob.size);
       return { name: f.name, mime: f.mime, base64: toBase64(await blob.arrayBuffer()) };
     };
     const [billFile, promiseFile] = await Promise.all([load(data.bill), load(data.promise)]);
@@ -78,5 +80,5 @@ export const runExtraction = createServerFn({ method: "POST" })
     );
     if (pErr) throw new Error(pErr.message);
 
-    return { billId: bill.id };
+    return { billId: bill.id, extraction: ex };
   });

@@ -1,11 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
-import { toast } from "sonner";
 import { Upload, FileCheck2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { runExtraction } from "@/lib/checks.functions";
 import { Button } from "@/components/ui/button";
+import { extractionErrorMessage, validateDocumentSize } from "@/lib/extraction-errors";
 
 export const Route = createFileRoute("/_authenticated/new")({
   head: () => ({
@@ -44,6 +44,7 @@ function NewCheck() {
   const [bill, setBill] = useState<File | null>(null);
   const [promise, setPromise] = useState<File | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   async function upload(f: File, kind: string) {
     const ext = f.name.split(".").pop() ?? "bin";
@@ -55,14 +56,17 @@ function NewCheck() {
 
   async function start() {
     if (!bill || !promise) return;
+    setErrorMessage(null);
     try {
+      validateDocumentSize(bill.size);
+      validateDocumentSize(promise.size);
       setBusy("Uploading privately…");
       const [b, p] = await Promise.all([upload(bill, "bill"), upload(promise, "promise")]);
       setBusy("Reading every line…");
       const { billId } = await extract({ data: { bill: b, promise: p } });
       navigate({ to: "/check/$billId", params: { billId } });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Something went wrong");
+      setErrorMessage(extractionErrorMessage(e));
       setBusy(null);
     }
   }
@@ -78,6 +82,7 @@ function NewCheck() {
       <Button variant="signal" size="lg" className="mt-8 w-full md:w-auto" disabled={!bill || !promise || !!busy} onClick={start}>
         {busy ? (<><Loader2 className="h-4 w-4 animate-spin" /> {busy}</>) : "Read both files"}
       </Button>
+      {errorMessage && <p role="alert" className="mt-4 text-sm text-destructive">{errorMessage}</p>}
     </main>
   );
 }

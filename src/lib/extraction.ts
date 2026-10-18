@@ -33,6 +33,14 @@ export const extractionSchema = z.object({
 });
 export type Extraction = z.infer<typeof extractionSchema>;
 
+// Legacy saved inputs may omit these fields; the strict AI wire schema may not.
+const outputPromise = promise.extend({ pnr: z.string().nullable() });
+export const extractionOutputSchema = extractionSchema.extend({
+  currency: z.string().nullable(),
+  refund: outputPromise.nullable(),
+  agreed_items: z.array(outputPromise),
+});
+
 export function toDate(value: string | null) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T00:00:00Z`);
