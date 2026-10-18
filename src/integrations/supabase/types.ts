@@ -14,7 +14,174 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bills: {
+        Row: {
+          confirmed_at: string | null
+          file_link: string
+          id: string
+          issuer: string | null
+          uploaded_at: string
+          user_id: string
+        }
+        Insert: {
+          confirmed_at?: string | null
+          file_link: string
+          id?: string
+          issuer?: string | null
+          uploaded_at?: string
+          user_id?: string
+        }
+        Update: {
+          confirmed_at?: string | null
+          file_link?: string
+          id?: string
+          issuer?: string | null
+          uploaded_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      line_items: {
+        Row: {
+          amount: number | null
+          bank_ref: string | null
+          bill_id: string
+          date: string | null
+          description: string | null
+          flag_reason: string | null
+          flagged: boolean
+          id: string
+          reference_no: string | null
+          type: string | null
+          user_id: string
+        }
+        Insert: {
+          amount?: number | null
+          bank_ref?: string | null
+          bill_id: string
+          date?: string | null
+          description?: string | null
+          flag_reason?: string | null
+          flagged?: boolean
+          id?: string
+          reference_no?: string | null
+          type?: string | null
+          user_id?: string
+        }
+        Update: {
+          amount?: number | null
+          bank_ref?: string | null
+          bill_id?: string
+          date?: string | null
+          description?: string | null
+          flag_reason?: string | null
+          flagged?: boolean
+          id?: string
+          reference_no?: string | null
+          type?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "line_items_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          draft_text: string | null
+          final_text: string | null
+          id: string
+          line_id: string
+          sent: boolean
+          sent_at: string | null
+          sent_to: string | null
+          user_id: string
+          words_changed: number | null
+        }
+        Insert: {
+          draft_text?: string | null
+          final_text?: string | null
+          id?: string
+          line_id: string
+          sent?: boolean
+          sent_at?: string | null
+          sent_to?: string | null
+          user_id?: string
+          words_changed?: number | null
+        }
+        Update: {
+          draft_text?: string | null
+          final_text?: string | null
+          id?: string
+          line_id?: string
+          sent?: boolean
+          sent_at?: string | null
+          sent_to?: string | null
+          user_id?: string
+          words_changed?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_line_id_fkey"
+            columns: ["line_id"]
+            isOneToOne: false
+            referencedRelation: "line_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      promises: {
+        Row: {
+          bank_ref: string | null
+          bill_id: string
+          file_link: string | null
+          id: string
+          item: string | null
+          promised_amount: number | null
+          promised_on: string | null
+          reference_no: string | null
+          source: string | null
+          user_id: string
+        }
+        Insert: {
+          bank_ref?: string | null
+          bill_id: string
+          file_link?: string | null
+          id?: string
+          item?: string | null
+          promised_amount?: number | null
+          promised_on?: string | null
+          reference_no?: string | null
+          source?: string | null
+          user_id?: string
+        }
+        Update: {
+          bank_ref?: string | null
+          bill_id?: string
+          file_link?: string | null
+          id?: string
+          item?: string | null
+          promised_amount?: number | null
+          promised_on?: string | null
+          reference_no?: string | null
+          source?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promises_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
