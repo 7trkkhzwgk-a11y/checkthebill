@@ -5,6 +5,6 @@
 - [x] Test each matching rule and verify the signed-in confirmation-to-message flow.
 
 # Result and message polish
-- [ ] Use actual contact names and currency formatting throughout results.
-- [ ] Generate subject-first concise messages with exact computed numbers and identifiers; preserve sent or edited messages.
-- [ ] Test currency and numeric integrity rules and verify the signed-in result/message flow.
+- [x] Use actual contact names and currency formatting throughout results.
+- [x] Generate subject-first concise messages with exact computed numbers and identifiers; preserve sent or edited messages.
+- [x] Test currency and numeric integrity rules and verify the signed-in result/message flow.
