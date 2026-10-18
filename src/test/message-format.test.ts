@@ -24,6 +24,9 @@ describe("result and message facts", () => {
     expect(finding().contact_name).toBe("IRCTC");
     expect(finding("BANK-123").contact_name).toBe("Example Bank");
   });
+  it("removes document labels from legacy promise sources", () => {
+    expect(presentFinding(finding(), { ...promise, source: "IRCTC cancellation/refund confirmation" }, "Example Bank", "INR").contact_name).toBe("IRCTC");
+  });
   it("passes exact PNR, refund and transaction identifiers and computed days", () => {
     expect(draftFacts(finding())).toMatchObject({ recipient: "IRCTC", pnr: "1234567890", refund_id: "100006792070399", transaction_id: "100001447873288", days_waiting: 24, refund_promised: "7180.00" });
   });

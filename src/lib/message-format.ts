@@ -16,17 +16,18 @@ export function formatCurrency(value: string | number | null | undefined, curren
   return `${symbol}${grouped}.${fraction}`;
 }
 const actualName = (value: string | null | undefined) => {
-  const name = value?.trim();
+  const name = value?.replace(/\s+(?:(?:cancellation\s*\/\s*)?refund\s+confirmation|contract|price list|invoice|statement)$/i, "").trim();
   return name && !/^(?:refund(?: confirmation)?|contract|price list|promise|bill|invoice|merchant|bank|vendor)$/i.test(name) ? name : null;
 };
 export function presentFinding(f: Finding, promise: Partial<ReviewedPromise> | undefined, issuer: string | null, currency: string | null): Finding {
   const source = actualName(promise?.source);
   const billIssuer = actualName(issuer);
-  const contact_name = f.recipient === "BANK" ? billIssuer : source ?? (f.recipient === "VENDOR" ? billIssuer : null);
+  const contact_name = f.recipient === "BANK" ? billIssuer : source ?? billIssuer;
   const name = contact_name ?? (f.recipient === "BANK" ? "your bank" : "the billing company");
   const pnr = promise?.pnr ?? f.pnr ?? promise?.item?.match(/\bPNR(?:\s*(?:no\.?|number|id))?\s*[:#-]?\s*([A-Z0-9-]+)/i)?.[1] ?? null;
   const detectedCurrency = currencyCode(currency) ?? f.currency ?? (/\bIRCTC\b/i.test(source ?? "") ? "INR" : null);
-  const result = { ...f, currency: detectedCurrency, contact_name, item: promise?.item ?? f.item ?? null, pnr };
+  const missing_amount = f.missing_amount ?? (f.kind === "refund" && f.promised !== null && f.credit_found !== null ? new Decimal(f.promised).minus(f.credit_found).toFixed(2) : null);
+  const result = { ...f, currency: detectedCurrency, contact_name, item: promise?.item ?? f.item ?? null, pnr, missing_amount };
   const amount = (v: string | null) => formatCurrency(v, detectedCurrency);
   result.flag_reason = !f.flagged ? null : f.kind === "refund"
     ? `Refund promised: ${amount(f.promised)}. Credit found: ${amount(f.credit_found)}. ${amount(f.missing_amount ?? new Decimal(f.promised ?? 0).minus(f.credit_found ?? 0).toFixed(2))} is still missing.`
