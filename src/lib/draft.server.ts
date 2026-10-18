@@ -19,7 +19,8 @@ export async function writeDraft(finding: Finding): Promise<string> {
   const response = await result.response;
   Object.entries(response.headers ?? {}).forEach(([name, value]) => { if (name.toLowerCase().startsWith("x-lovable-aig-") && value) setResponseHeader(name, value); });
   // Hide exact identifiers temporarily; the deterministic mask must not mistake them for card numbers.
-  const ids = [finding.refund_id, finding.transaction_id, finding.bank_ref, finding.pnr].filter((id): id is string => !!id);
+  const itemReferences = facts.item?.match(/\d+/g) ?? [];
+  const ids = [finding.refund_id, finding.transaction_id, finding.bank_ref, finding.pnr, ...itemReferences].filter((id): id is string => !!id);
   const protectedText = maskWithIdentifiers(text, ids);
   for (const id of ids) if (!protectedText.includes(id)) throw new Error("The message did not preserve the references. Your confirmed maths has been saved.");
   assertExactNumbers(text, [...ids, ...formatted, finding.promised_on, finding.days_waiting]);

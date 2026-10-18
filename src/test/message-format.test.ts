@@ -37,6 +37,10 @@ describe("result and message facts", () => {
   it("accepts exact formatted amounts, dates, days and whole IDs", () => {
     expect(() => assertExactNumbers("₹7,180.00 on 2026-09-24, after 24 days. Refund ID 100006792070399.", ["₹7,180.00", "2026-09-24", 24, "100006792070399"])).not.toThrow();
   });
+  it("preserves a supplied train number without allowing a changed one", () => {
+    expect(() => assertExactNumbers("SANGHAMITRA EXP (12295)", ["12295"])).not.toThrow();
+    expect(() => assertExactNumbers("SANGHAMITRA EXP (12296)", ["12295"])).toThrow();
+  });
   it("rejects changed currency amounts even if their numeric chunks are allowed", () => {
     expect(() => assertExactNumbers("₹7,180.24", ["₹7,180.00", 24])).toThrow();
     expect(() => assertExactNumbers("7180.00", ["₹7,180.00"])).toThrow();
