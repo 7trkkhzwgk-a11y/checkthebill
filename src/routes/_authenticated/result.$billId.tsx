@@ -121,5 +121,6 @@ function ResultPage() {
       </section>;
     })}
     {(missingDraft || outdatedDraft) && <Button variant="signal" className="mt-6" disabled={busy} onClick={draft}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{outdatedDraft ? "Update message" : "Write message"}</Button>}
+    <AskQuestion billId={billId} />
   </main>;
 }
