@@ -12,7 +12,7 @@ describe("extraction normalization", () => {
   });
   it("preserves complete refund, transaction and bank references and blank bank reference", () => {
     expect(normalizeExtraction(base).promise_rows[0]).toMatchObject({ reference_no: "1234567890123456", transaction_id: "9876543210987654", bank_ref: "" });
-    expect(normalizeExtraction({ ...base, refund: { ...refund, bank_ref: "1234567890123456789" } }).promise_rows[0].bank_ref).toBe("1234567890123456789");
+    expect(normalizeExtraction({ ...base, refund: { ...refund, bank_ref: "1234567890123456789" } }).promise_rows[0]?.bank_ref).toBe("1234567890123456789");
   });
   it("excludes balances, totals, amount due, headers and footers but keeps charges and credits", () => {
     const descriptions = ["Opening balance", "Closing balance", "Total", "Amount due", "Header", "Footer notes", "Train ticket", "Train refund"];
@@ -26,7 +26,7 @@ describe("extraction normalization", () => {
     }
   });
   it("leaves missing or placeholder dates empty and accepts real printed dates", () => {
-    expect(normalizeExtraction(base).promise_rows[0].promised_on).toBeNull();
+    expect(normalizeExtraction(base).promise_rows[0]?.promised_on).toBeNull();
     expect(toDate("mm/dd/yyyy")).toBeNull();
     expect(toDate("2026-02-30")).toBeNull();
     expect(toDate("2026-10-18")).toBe("2026-10-18");
