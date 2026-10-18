@@ -28,7 +28,7 @@ export function AppHeader({ signedIn }: { signedIn: boolean }) {
               <Link to="/history">History</Link>
             </Button>
             <Button size="sm" variant="outline" onClick={signOut}>
-              Sign out
+              Log out
             </Button>
           </div>
         ) : (
