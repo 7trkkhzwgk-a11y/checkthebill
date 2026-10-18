@@ -10,6 +10,6 @@
 - [x] Test currency and numeric integrity rules and verify the signed-in result/message flow.
 
 # Extraction failure
-- [ ] Repair the required-but-nullable AI extraction schema without changing comparison or messages.
-- [ ] Return complete extraction results and show clear AI/upload errors.
-- [ ] Test both-file requests and verify signed-in image/PDF uploads through review.
+- [x] Repair the required-but-nullable AI extraction schema without changing comparison or messages.
+- [x] Return complete extraction results and show clear AI/upload errors.
+- [x] Test both-file requests and verify signed-in image/PDF uploads through review.
