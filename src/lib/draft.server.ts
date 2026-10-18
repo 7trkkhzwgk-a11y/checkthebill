@@ -1,7 +1,7 @@
 import { getRequest, setResponseHeader } from "@tanstack/react-start/server";
 import { createResponsesCall } from "@/lib/ai/responses.server";
 import { draftFacts, type Finding } from "@/lib/comparison";
-import { maskSensitive } from "@/lib/mask";
+import { maskWithIdentifiers } from "@/lib/mask";
 
 export async function writeDraft(finding: Finding): Promise<string> {
   const apiKey = process.env["LOVABLE_API_KEY"];
@@ -16,10 +16,7 @@ export async function writeDraft(finding: Finding): Promise<string> {
   Object.entries(response.headers ?? {}).forEach(([name, value]) => { if (name.toLowerCase().startsWith("x-lovable-aig-") && value) setResponseHeader(name, value); });
   // Hide exact identifiers temporarily; the deterministic mask must not mistake them for card numbers.
   const ids = [finding.refund_id, finding.transaction_id, finding.bank_ref].filter((id): id is string => !!id);
-  let protectedText = text;
-  ids.forEach((id, i) => { protectedText = protectedText.split(id).join(`\uE002${String.fromCharCode(0xE100 + i)}\uE003`); });
-  protectedText = maskSensitive(protectedText) ?? "";
-  ids.forEach((id, i) => { protectedText = protectedText.split(`\uE002${String.fromCharCode(0xE100 + i)}\uE003`).join(id); });
+  const protectedText = maskWithIdentifiers(text, ids);
   for (const id of ids) if (!protectedText.includes(id)) throw new Error("The message did not preserve the references. Your confirmed maths has been saved.");
   const allowed = new Set(Object.values(facts).filter((v): v is string => typeof v === "string").flatMap((v) => v.match(/\d+(?:\.\d+)?/g) ?? []).concat(finding.days_waiting === null ? [] : [String(finding.days_waiting)]));
   for (const number of text.match(/\d+(?:\.\d+)?/g) ?? []) if (!allowed.has(number)) throw new Error("The message changed a number. Your confirmed maths has been saved.");

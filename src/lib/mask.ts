@@ -40,3 +40,12 @@ export function maskSensitive(input: string | null | undefined, mode: "text" | "
 
   return s.replace(/\uE000([\uE100-\uF8FF])\uE001/g, (_m, key: string) => identifiers[key.charCodeAt(0) - 0xE100] ?? "");
 }
+
+export function maskWithIdentifiers(text: string, identifiers: (string | null)[]): string {
+  const ids = [...new Set(identifiers.filter((id): id is string => !!id))].sort((a, b) => b.length - a.length);
+  let result = text;
+  ids.forEach((id, i) => { result = result.split(id).join(`\uE002${String.fromCharCode(0xE100 + i)}\uE003`); });
+  result = maskSensitive(result) ?? "";
+  ids.forEach((id, i) => { result = result.split(`\uE002${String.fromCharCode(0xE100 + i)}\uE003`).join(id); });
+  return result;
+}

@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { compareConfirmed, countWordsChanged, reviewedLineSchema, reviewedPromiseSchema, type Comparison } from "@/lib/comparison";
-import { maskSensitive } from "@/lib/mask";
+import { maskSensitive, maskWithIdentifiers } from "@/lib/mask";
 import { toDate } from "@/lib/extraction";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -95,13 +95,19 @@ export const saveMessageDecision = createServerFn({ method: "POST" })
   .inputValidator((input) => z.object({ messageId: z.string().uuid(), finalText: z.string().max(20000), decision: z.enum(["sent", "not_sending"]) }).parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: message, error } = await supabase.from("messages").select("id,draft_text,sent,words_changed").eq("id", data.messageId).eq("user_id", userId).single();
+    const { data: message, error } = await supabase.from("messages").select("id,line_id,draft_text,sent,words_changed").eq("id", data.messageId).eq("user_id", userId).single();
     if (error || !message) throw new Error("Couldn't find this message.");
     if (message.sent) return { wordsChanged: message.words_changed ?? 0 };
     if (data.decision === "sent" && !data.finalText.trim()) throw new Error("The message is empty.");
     // Identifiers in the draft remain available for the dispute; other edited text is masked.
-    const final_text = maskSensitive(data.finalText) ?? "";
-    const words_changed = countWordsChanged(message.draft_text ?? "", data.finalText);
+    const line = await supabase.from("line_items").select("bill_id").eq("id", message.line_id).eq("user_id", userId).single();
+    if (line.error || !line.data) throw new Error("Couldn't find the message transaction.");
+    const bill = await supabase.from("bills").select("comparison_result").eq("id", line.data.bill_id).eq("user_id", userId).single();
+    if (bill.error || !bill.data) throw new Error("Couldn't find the message check.");
+    const comparison = bill.data.comparison_result as unknown as Comparison | null;
+    const identifiers = comparison?.findings.filter((f) => f.line_id === message.line_id).flatMap((f) => [f.refund_id, f.transaction_id, f.bank_ref]) ?? [];
+    const final_text = maskWithIdentifiers(data.finalText, identifiers);
+    const words_changed = countWordsChanged(message.draft_text ?? "", final_text);
     const { error: saveError } = await supabase.from("messages").update({ final_text, words_changed, sent: data.decision === "sent", sent_at: data.decision === "sent" ? new Date().toISOString() : null, declined_at: data.decision === "not_sending" ? new Date().toISOString() : null }).eq("id", data.messageId).eq("user_id", userId);
     if (saveError) throw new Error("Couldn't save the message decision.");
     return { wordsChanged: words_changed };

@@ -23,7 +23,7 @@ export const Route = createFileRoute("/_authenticated/result/$billId")({
   ] }),
   loader: ({ context, params }) => context.queryClient.ensureQueryData(resultQuery(params.billId)),
   component: ResultPage,
-  errorComponent: ({ error }) => <main className="mx-auto max-w-3xl px-4 py-12"><h1 className="text-2xl font-bold">Couldn't load this check</h1><p className="mt-4 text-muted-foreground">{error.message}</p><Button asChild variant="outline" className="mt-6"><Link to="/new">New check</Link></Button></main>,
+  errorComponent: ({ error }) => <main className="mx-auto max-w-3xl px-4 py-12"><h1 className="text-2xl font-bold">Couldn't load this check</h1><p className="mt-4 text-muted-foreground">{error instanceof Error ? error.message : "This check could not be loaded."}</p><Button asChild variant="outline" className="mt-6"><Link to="/new">New check</Link></Button></main>,
 });
 
 function Maths({ finding }: { finding: Finding }) {
