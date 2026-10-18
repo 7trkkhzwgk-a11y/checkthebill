@@ -1,6 +1,8 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { streamText, Output, NoObjectGeneratedError } from "ai";
-import { extractionSchema, type Extraction } from "@/lib/extraction";
+import { streamText, Output } from "ai";
+import { extractionOutputSchema, type Extraction } from "@/lib/extraction";
+import { extractionErrorMessage } from "@/lib/extraction-errors";
+import { createLovableAiGatewayRunIdFetch } from "@/lib/ai/run-id.server";
 
 export const EXTRACTION_INSTRUCTION =
   "Extract printed structured data only. Never calculate, add, subtract, total, or infer amounts. BILL: extract only real transactions (charges and credits). Exclude opening/closing balances, totals, amount due, headers and footer notes; classify non-transactions as summary/header/footer, not transaction. Copy the printed statement total separately to bill_total, or null if absent. PROMISE: for a refund confirmation, set promise_kind=refund and create exactly ONE refund object, with agreed_items empty. Copy item (short refund subject), original_charge (original paid amount), promised_amount (Total Refund Amount, not original charge or component refunds), reference_no (Cancellation/Refund ID), transaction_id, bank_ref (exact Bank Reference Id value; empty string if blank), promised_on (refund/transaction date), status_text (exact remark). Do not turn refund breakdowns into separate promises. For contracts or price lists, set refund=null and create one agreed_items row per item with its agreed price in promised_amount.";
@@ -20,12 +22,15 @@ function filePart(f: InFile) {
 export async function extractLines(bill: InFile, promise: InFile): Promise<Extraction> {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("AI is not configured.");
+  const runIdFetch = createLovableAiGatewayRunIdFetch();
   const provider = createOpenAI({
     baseURL: "https://ai.gateway.lovable.dev/v1",
     apiKey,
     headers: { "Lovable-API-Key": apiKey, "X-Lovable-AIG-SDK": "vercel-ai-sdk" },
+    fetch: runIdFetch.fetch,
   });
 
+  let streamError: unknown;
   const result = streamText({
     model: provider.responses("openai/gpt-6-astra"),
     instructions: `${EXTRACTION_INSTRUCTION}\n\n${PRIVACY_RULES}\n\nThe first file is the BILL; copy its business issuer into issuer. The second file is the PROMISE; copy the actual business issuing the promise into source (e.g. IRCTC), not a generic document label. Copy the printed currency as its ISO code (INR for ₹, USD for US $), or null if undetermined; do not convert currencies. Copy the full printed PNR into pnr or null when absent. Keep item a short factual booked/cancelled item label, without names.`,
@@ -40,7 +45,9 @@ export async function extractLines(bill: InFile, promise: InFile): Promise<Extra
         ],
       },
     ],
-    output: Output.object({ schema: extractionSchema }),
+    output: Output.object({ schema: extractionOutputSchema }),
+    maxRetries: 0,
+    onError: ({ error }) => { streamError = error; },
     providerOptions: {
       openai: {
         forceReasoning: true,
@@ -53,11 +60,15 @@ export async function extractLines(bill: InFile, promise: InFile): Promise<Extra
   });
 
   try {
+    // Consume the required upstream stream privately, never across the RPC boundary.
+    await result.consumeStream({ onError: (error) => { streamError = error; } });
+    if (streamError) throw streamError;
     return await result.output;
   } catch (e) {
-    if (NoObjectGeneratedError.isInstance(e)) {
-      throw new Error("Couldn't read the documents. Try clearer files.");
-    }
-    throw e;
+    const failure = streamError ?? e;
+    const message = extractionErrorMessage(failure);
+    const status = failure && typeof failure === "object" && "statusCode" in failure ? failure.statusCode : undefined;
+    console.error("Document extraction failed", { status, message, runId: runIdFetch.getRunId() });
+    throw new Error(message);
   }
 }
