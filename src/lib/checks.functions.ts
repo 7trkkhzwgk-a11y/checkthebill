@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { maskSensitive } from "@/lib/mask";
+import { normalizeExtraction } from "@/lib/extraction";
 
 type Input = {
   bill: { path: string; name: string; mime: string };
@@ -16,10 +16,6 @@ function toBase64(buf: ArrayBuffer) {
     bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   }
   return btoa(bin);
-}
-
-function toDate(s: string | null) {
-  return s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
 export const runExtraction = createServerFn({ method: "POST" })
@@ -44,11 +40,11 @@ export const runExtraction = createServerFn({ method: "POST" })
     const [billFile, promiseFile] = await Promise.all([load(data.bill), load(data.promise)]);
 
     const { extractLines } = await import("@/lib/extract.server");
-    const ex = await extractLines(billFile, promiseFile);
+    const ex = normalizeExtraction(await extractLines(billFile, promiseFile));
 
     const { data: bill, error: billErr } = await supabase
       .from("bills")
-      .insert({ user_id: userId, issuer: maskSensitive(ex.issuer), file_link: data.bill.path })
+      .insert({ user_id: userId, issuer: ex.issuer, bill_total: ex.bill_total, file_link: data.bill.path })
       .select("id")
       .single();
     if (billErr || !bill) throw new Error(billErr?.message ?? "Couldn't save bill.");
@@ -58,30 +54,24 @@ export const runExtraction = createServerFn({ method: "POST" })
         ex.bill_lines.map((l) => ({
           user_id: userId,
           bill_id: bill.id,
-          date: toDate(l.date),
-          description: maskSensitive(l.description),
+          date: l.date,
+          description: l.description,
           amount: l.amount,
           type: l.type,
-          reference_no: maskSensitive(l.reference_no),
-          bank_ref: maskSensitive(l.bank_ref),
+          reference_no: l.reference_no,
+          bank_ref: l.bank_ref,
         })),
       );
       if (error) throw new Error(error.message);
     }
 
-    const promiseRows = ex.promise_lines.length
-      ? ex.promise_lines
-      : [{ date: null, description: null, amount: null, type: null, reference_no: null, bank_ref: null }];
+    const promiseRows = ex.promise_rows;
     const { error: pErr } = await supabase.from("promises").insert(
       promiseRows.map((l) => ({
         user_id: userId,
         bill_id: bill.id,
-        source: maskSensitive(ex.source),
-        item: maskSensitive(l.description),
-        promised_amount: l.amount,
-        reference_no: maskSensitive(l.reference_no),
-        bank_ref: maskSensitive(l.bank_ref),
-        promised_on: toDate(l.date),
+        source: ex.source,
+        ...l,
         file_link: data.promise.path,
       })),
     );

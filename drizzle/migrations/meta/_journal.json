@@ -15,6 +15,13 @@
       "when": 1792360801125,
       "tag": "0001_migration",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792361890852,
+      "tag": "0002_extraction_refund_details",
+      "breakpoints": true
     }
   ]
 }

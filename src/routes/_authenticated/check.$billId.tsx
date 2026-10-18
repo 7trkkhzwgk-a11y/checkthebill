@@ -5,6 +5,9 @@ import { CheckCircle2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { maskSensitive } from "@/lib/mask";
+import { toDate } from "@/lib/extraction";
 
 export const Route = createFileRoute("/_authenticated/check/$billId")({
   head: () => ({
@@ -21,15 +24,16 @@ export const Route = createFileRoute("/_authenticated/check/$billId")({
 });
 
 type Line = { id: string; date: string | null; description: string | null; amount: number | null; type: string | null; reference_no: string | null; bank_ref: string | null };
-type Prom = { id: string; promised_on: string | null; item: string | null; promised_amount: number | null; reference_no: string | null; bank_ref: string | null; source: string | null };
+type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null };
 
 function Cell({ value, onChange, type = "text", disabled }: { value: string; onChange: (v: string) => void; type?: string; disabled: boolean }) {
-  return <Input className="h-8 min-w-24 font-mono text-xs" type={type} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
+  return <Input className="h-8 min-w-24 font-mono text-xs" type={type === "date" ? "text" : type} step={type === "number" ? "any" : undefined} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
 }
 
 function CheckPage() {
   const { billId } = Route.useParams();
   const [issuer, setIssuer] = useState<string | null>(null);
+  const [billTotal, setBillTotal] = useState<number | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [proms, setProms] = useState<Prom[]>([]);
@@ -39,11 +43,12 @@ function CheckPage() {
   useEffect(() => {
     (async () => {
       const [b, l, p] = await Promise.all([
-        supabase.from("bills").select("issuer, confirmed_at").eq("id", billId).single(),
+        supabase.from("bills").select("issuer, confirmed_at, bill_total").eq("id", billId).single(),
         supabase.from("line_items").select("id,date,description,amount,type,reference_no,bank_ref").eq("bill_id", billId).order("date"),
-        supabase.from("promises").select("id,promised_on,item,promised_amount,reference_no,bank_ref,source").eq("bill_id", billId),
+        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source").eq("bill_id", billId),
       ]);
       setIssuer(b.data?.issuer ?? null);
+      setBillTotal(b.data?.bill_total ?? null);
       setConfirmed(!!b.data?.confirmed_at);
       setLines((l.data ?? []) as Line[]);
       setProms((p.data ?? []) as Prom[]);
@@ -54,22 +59,25 @@ function CheckPage() {
   const setL = (i: number, k: keyof Line, v: string) =>
     setLines((ls) => ls.map((x, j) => (j === i ? { ...x, [k]: k === "amount" ? (v === "" ? null : Number(v)) : v || null } : x)));
   const setP = (i: number, k: keyof Prom, v: string) =>
-    setProms((ps) => ps.map((x, j) => (j === i ? { ...x, [k]: k === "promised_amount" ? (v === "" ? null : Number(v)) : v || null } : x)));
+    setProms((ps) => ps.map((x, j) => (j === i ? { ...x, [k]: k === "promised_amount" || k === "original_charge" ? (v === "" ? null : Number(v)) : k === "bank_ref" ? v : v || null } : x)));
 
   async function looksRight() {
     setSaving(true);
     try {
+      for (const date of [...lines.map((l) => l.date), ...proms.map((p) => p.promised_on)]) {
+        if (date && !toDate(date)) throw new Error("Enter dates as YYYY-MM-DD or leave them empty.");
+      }
       for (const l of lines) {
         const { id, ...rest } = l;
-        const { error } = await supabase.from("line_items").update(rest).eq("id", id);
+        const { error } = await supabase.from("line_items").update({ ...rest, description: maskSensitive(rest.description), reference_no: maskSensitive(rest.reference_no, "identifier"), bank_ref: maskSensitive(rest.bank_ref, "identifier") }).eq("id", id);
         if (error) throw error;
       }
       for (const p of proms) {
         const { id, ...rest } = p;
-        const { error } = await supabase.from("promises").update(rest).eq("id", id);
+        const { error } = await supabase.from("promises").update({ ...rest, item: maskSensitive(rest.item), source: maskSensitive(rest.source), status_text: maskSensitive(rest.status_text), bank_ref: rest.bank_ref ?? "" }).eq("id", id);
         if (error) throw error;
       }
-      const { error } = await supabase.from("bills").update({ issuer, confirmed_at: new Date().toISOString() }).eq("id", billId);
+      const { error } = await supabase.from("bills").update({ issuer: maskSensitive(issuer), bill_total: billTotal, confirmed_at: new Date().toISOString() }).eq("id", billId);
       if (error) throw error;
       setConfirmed(true);
       toast.success("Lines confirmed");
@@ -93,7 +101,7 @@ function CheckPage() {
         <Cell value={issuer ?? ""} onChange={(v) => setIssuer(v || null)} disabled={confirmed} />
       </div>
 
-      <h2 className="mt-8 font-semibold">Bill</h2>
+      <h2 className="mt-8 font-semibold">Bill transactions</h2>
       <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-card shadow-card">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-border">
@@ -119,24 +127,35 @@ function CheckPage() {
         </table>
       </div>
 
-      <h2 className="mt-8 font-semibold">Promise {proms[0]?.source ? <span className="font-normal text-muted-foreground">· {proms[0].source}</span> : null}</h2>
-      <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-card shadow-card">
-        <table className="w-full text-sm">
-          <thead><tr className="border-b border-border">
-            {["Promised on", "Item", "Amount", "Reference", "Bank ref"].map((h) => <th key={h} className={th}>{h}</th>)}
-          </tr></thead>
-          <tbody>
-            {proms.map((p, i) => (
-              <tr key={p.id} className="border-b border-border last:border-0">
-                <td className="p-1"><Cell type="date" value={p.promised_on ?? ""} onChange={(v) => setP(i, "promised_on", v)} disabled={confirmed} /></td>
-                <td className="p-1"><Cell value={p.item ?? ""} onChange={(v) => setP(i, "item", v)} disabled={confirmed} /></td>
-                <td className="p-1"><Cell type="number" value={p.promised_amount?.toString() ?? ""} onChange={(v) => setP(i, "promised_amount", v)} disabled={confirmed} /></td>
-                <td className="p-1"><Cell value={p.reference_no ?? ""} onChange={(v) => setP(i, "reference_no", v)} disabled={confirmed} /></td>
-                <td className="p-1"><Cell value={p.bank_ref ?? ""} onChange={(v) => setP(i, "bank_ref", v)} disabled={confirmed} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="mt-4 max-w-sm space-y-2">
+        <Label htmlFor="bill-total">Statement total</Label>
+        <Input id="bill-total" type="number" step="any" value={billTotal ?? ""} disabled={confirmed} onChange={(e) => setBillTotal(e.target.value === "" ? null : Number(e.target.value))} />
+      </div>
+
+      <h2 className="mt-8 font-semibold">Promise</h2>
+      <div className="mt-3 space-y-4">
+        {proms.map((p, i) => (
+          <section key={p.id} aria-label={`Promise ${i + 1}`} className="rounded-lg border border-border bg-card p-5 shadow-card">
+            {p.source && <p className="mb-4 text-sm text-muted-foreground">{p.source}</p>}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {([
+                ["item", "Item", "text"],
+                ["original_charge", "Original charge", "number"],
+                ["promised_amount", "Promised amount / Total refund amount", "number"],
+                ["reference_no", "Cancellation / Refund ID / Reference", "text"],
+                ["transaction_id", "Transaction ID", "text"],
+                ["bank_ref", "Bank Reference Id", "text"],
+                ["promised_on", "Refund / transaction date", "date"],
+                ["status_text", "Remark / status", "text"],
+              ] as const).map(([key, label, type]) => (
+                <div key={key} className="min-w-0 space-y-2">
+                  <Label htmlFor={`${p.id}-${key}`}>{label}</Label>
+                  <Input id={`${p.id}-${key}`} type={type === "date" ? "text" : type} step={type === "number" ? "any" : undefined} className="font-mono text-sm" value={p[key] ?? ""} disabled={confirmed} onChange={(e) => setP(i, key, e.target.value)} />
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
 
       {confirmed ? (
