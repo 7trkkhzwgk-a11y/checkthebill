@@ -52,17 +52,16 @@ export function assertExactNumbers(text: string, tokens: (string | number | null
 
 // Chat answers guard only money amounts; day counts, dates, IDs and question numbers are allowed.
 const MONEY_TOKEN = /[₹$€£]\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*\.\d{2}\b/g;
-const normalizeMoney = (token: string) => token.replace(/[₹$€£,\s]/g, "");
+const normalizeMoney = (token: string) => new Decimal(token.replace(/[₹$€£,\s]/g, "")).toFixed(2);
 export function assertChatMoney(text: string, allowed: (string | number | null | undefined)[], question: string) {
   const allowedValues = new Set(
     allowed
       .filter((v): v is string | number => v != null && v !== "")
-      .map((v) => normalizeMoney(typeof v === "number" ? new Decimal(v).toFixed(2) : String(v)).replace(/\.00$/, ".00")),
+      .map((v) => normalizeMoney(String(v))),
   );
   // Numbers the user stated in their own question are allowed through.
   for (const match of question.match(MONEY_TOKEN) ?? []) allowedValues.add(normalizeMoney(match));
   for (const match of text.match(MONEY_TOKEN) ?? []) {
-    const value = normalizeMoney(match);
-    if (!allowedValues.has(value)) throw new Error("I couldn't answer that safely — please rephrase.");
+    if (!allowedValues.has(normalizeMoney(match))) throw new Error("I couldn't answer that safely — please rephrase.");
   }
 }

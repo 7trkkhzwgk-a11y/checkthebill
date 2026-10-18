@@ -50,3 +50,19 @@ describe("result and message facts", () => {
     expect(() => assertExactNumbers("25 days", [24])).toThrow();
   });
 });
+import { assertChatMoney } from "@/lib/message-format";
+describe("chat money guard", () => {
+  const allowed = ["₹7,180.00", "₹295.40", 7475.4];
+  it("allows answers using only code-calculated money", () => {
+    expect(() => assertChatMoney("₹7,180.00 was promised on 24 Sep; after 31 days total, ₹295.40 is missing. Ref ID 100006792070399.", allowed, "what if they don't reply in 7 days?")).not.toThrow();
+  });
+  it("allows day counts, dates, IDs and plain integers freely", () => {
+    expect(() => assertChatMoney("Follow up after 7 days; it has been 24 days since 2026-09-24. PNR 1234567890.", allowed, "who do I contact?")).not.toThrow();
+  });
+  it("allows money stated in the user's own question", () => {
+    expect(() => assertChatMoney("You mentioned ₹500.00; that does not match any figure in this check.", allowed, "what about the ₹500 fee?")).not.toThrow();
+  });
+  it("blocks money that is not a code-calculated value", () => {
+    expect(() => assertChatMoney("You could claim ₹9,999.99 in compensation.", allowed, "what can I claim?")).toThrow("I couldn't answer that safely — please rephrase.");
+  });
+});
