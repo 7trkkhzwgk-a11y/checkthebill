@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { getCheckResult, generateCheckDrafts, saveMessageDecision } from "@/lib/comparison.functions";
+import { getCheckResult, generateCheckDrafts, saveMessageDecision, askCheckQuestion } from "@/lib/comparison.functions";
 import type { Finding } from "@/lib/comparison";
 import { DRAFT_VERSION, formatCurrency } from "@/lib/message-format";
 import type { Tables } from "@/integrations/supabase/types";
