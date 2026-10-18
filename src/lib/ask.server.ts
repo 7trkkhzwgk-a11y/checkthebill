@@ -4,6 +4,16 @@ import { draftFacts, type Comparison, type Finding } from "@/lib/comparison";
 import { maskWithIdentifiers } from "@/lib/mask";
 import { assertChatMoney, formatCurrency } from "@/lib/message-format";
 
+// Compute "if they don't reply in N more days" totals in code so the AI never derives numbers itself.
+function deriveDaysWaiting(daysWaiting: number | null, question: string): Record<string, number> | null {
+  if (daysWaiting == null) return null;
+  const derived: Record<string, number> = {};
+  for (const match of question.matchAll(/(\d+)\s*(?:more\s+)?days?\b/gi)) {
+    derived[`total_days_waiting_after_${match[1]}_more_days`] = daysWaiting + Number(match[1]);
+  }
+  return Object.keys(derived).length ? derived : null;
+}
+
 // Follow-up answers use only this case's computed facts; document text is never sent.
 export async function answerQuestion(comparison: Comparison, currency: string | null, question: string): Promise<string> {
   const apiKey = process.env["LOVABLE_API_KEY"];
