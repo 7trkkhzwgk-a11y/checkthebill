@@ -13,3 +13,8 @@
 - [x] Repair the required-but-nullable AI extraction schema without changing comparison or messages.
 - [x] Return complete extraction results and show clear AI/upload errors.
 - [x] Test both-file requests and verify signed-in image/PDF uploads through review.
+
+# Chat, history and navigation
+- [x] Add Ask a question on the result page answering from saved computed facts only.
+- [x] Add History page listing past checks with date, issuer, flag, missing amount and message status.
+- [x] Add New check · History · Log out to the top navigation.

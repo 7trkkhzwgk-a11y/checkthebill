@@ -2,12 +2,12 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { queryOptions, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { AlertTriangle, CheckCircle2, Copy, Loader2, Send, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, Loader2, MessageCircleQuestion, Send, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { getCheckResult, generateCheckDrafts, saveMessageDecision } from "@/lib/comparison.functions";
+import { getCheckResult, generateCheckDrafts, saveMessageDecision, askCheckQuestion } from "@/lib/comparison.functions";
 import type { Finding } from "@/lib/comparison";
 import { DRAFT_VERSION, formatCurrency } from "@/lib/message-format";
 import type { Tables } from "@/integrations/supabase/types";
@@ -60,6 +60,37 @@ function MessageEditor({ message, billId, contactName }: { message: Tables<"mess
   </div>;
 }
 
+function AskQuestion({ billId }: { billId: string }) {
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const ask = useServerFn(askCheckQuestion);
+  async function submit() {
+    setBusy(true);
+    try {
+      const { answer } = await ask({ data: { billId, question } });
+      setAnswer(answer);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't answer this question."); }
+    finally { setBusy(false); }
+  }
+  return (
+    <section className="mt-8 border-t border-border pt-6">
+      <h2 className="flex items-center gap-2 font-semibold"><MessageCircleQuestion className="h-5 w-5 text-accent" />Ask a question</h2>
+      <p className="mt-1 text-xs text-muted-foreground">Answers use only this check's saved maths, references and contact routing.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {["Who do I contact and what do I do?", "What if they don't reply in 7 days?"].map((suggestion) => (
+          <Button key={suggestion} size="sm" variant="outline" disabled={busy} onClick={() => setQuestion(suggestion)}>{suggestion}</Button>
+        ))}
+      </div>
+      <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} disabled={busy} placeholder="Ask about this check…" className="mt-3 min-h-20 text-sm" />
+      <Button variant="signal" className="mt-3" disabled={busy || !question.trim()} onClick={submit}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Ask
+      </Button>
+      {answer && <p className="mt-4 whitespace-pre-wrap border-l-2 border-accent pl-4 text-sm leading-relaxed">{answer}</p>}
+    </section>
+  );
+}
+
 function ResultPage() {
   const { billId } = Route.useParams();
   const { data } = useSuspenseQuery(resultQuery(billId));
@@ -90,5 +121,6 @@ function ResultPage() {
       </section>;
     })}
     {(missingDraft || outdatedDraft) && <Button variant="signal" className="mt-6" disabled={busy} onClick={draft}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{outdatedDraft ? "Update message" : "Write message"}</Button>}
+    <AskQuestion billId={billId} />
   </main>;
 }

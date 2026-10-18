@@ -24,8 +24,11 @@ export function AppHeader({ signedIn }: { signedIn: boolean }) {
             <Button asChild size="sm" variant="ghost">
               <Link to="/new">New check</Link>
             </Button>
+            <Button asChild size="sm" variant="ghost">
+              <Link to="/history">History</Link>
+            </Button>
             <Button size="sm" variant="outline" onClick={signOut}>
-              Sign out
+              Log out
             </Button>
           </div>
         ) : (
