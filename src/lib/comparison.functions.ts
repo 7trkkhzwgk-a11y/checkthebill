@@ -1,0 +1,108 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { compareConfirmed, countWordsChanged, reviewedLineSchema, reviewedPromiseSchema, type Comparison } from "@/lib/comparison";
+import { maskSensitive } from "@/lib/mask";
+import { toDate } from "@/lib/extraction";
+import type { Json } from "@/integrations/supabase/types";
+
+const billInput = z.object({ billId: z.string().uuid() });
+const confirmationInput = billInput.extend({
+  issuer: z.string().max(2000).nullable(), billTotal: z.number().finite().nonnegative().nullable(),
+  lines: z.array(reviewedLineSchema).max(1000), promises: z.array(reviewedPromiseSchema).max(1000),
+});
+
+export const confirmCheck = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => confirmationInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const [b, l, p] = await Promise.all([
+      supabase.from("bills").select("id,confirmed_at,comparison_result").eq("id", data.billId).eq("user_id", userId).single(),
+      supabase.from("line_items").select("id").eq("bill_id", data.billId).eq("user_id", userId),
+      supabase.from("promises").select("id,promise_kind").eq("bill_id", data.billId).eq("user_id", userId),
+    ]);
+    if (b.error || !b.data || l.error || p.error) throw new Error("Couldn't load this check.");
+    if (b.data.comparison_result) return { billId: data.billId };
+    const sameIds = (saved: { id: string }[], edited: { id: string }[]) => saved.length === edited.length && new Set(edited.map((r) => r.id)).size === edited.length && saved.every((r) => edited.some((e) => e.id === r.id));
+    if (!sameIds(l.data ?? [], data.lines) || !sameIds(p.data ?? [], data.promises)) throw new Error("The saved lines changed. Reload this check before confirming.");
+    for (const date of [...data.lines.map((r) => r.date), ...data.promises.map((r) => r.promised_on)]) {
+      if (date && !toDate(date)) throw new Error("Enter dates as YYYY-MM-DD or leave them empty.");
+    }
+    const lines = data.lines.map((r) => ({ ...r, date: toDate(r.date), description: maskSensitive(r.description), reference_no: maskSensitive(r.reference_no, "identifier"), bank_ref: maskSensitive(r.bank_ref, "identifier") }));
+    const promises = data.promises.map((r) => ({ ...r, promised_on: toDate(r.promised_on), item: maskSensitive(r.item), source: maskSensitive(r.source), status_text: maskSensitive(r.status_text), bank_ref: r.bank_ref ?? "", promise_kind: p.data?.find((saved) => saved.id === r.id)?.promise_kind ?? null }));
+    for (const { id, ...row } of lines) {
+      const { error } = await supabase.from("line_items").update({ ...row, flagged: false, flag_reason: null }).eq("id", id).eq("bill_id", data.billId).eq("user_id", userId);
+      if (error) throw new Error("Couldn't save the confirmed transactions.");
+    }
+    for (const { id, ...row } of promises) {
+      const { error } = await supabase.from("promises").update(row).eq("id", id).eq("bill_id", data.billId).eq("user_id", userId);
+      if (error) throw new Error("Couldn't save the confirmed promise.");
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const comparison = compareConfirmed(lines, promises, today);
+    const flaggedIds = [...new Set(comparison.findings.filter((f) => f.flagged && f.line_id).map((f) => f.line_id))];
+    for (const id of flaggedIds) {
+      if (!id) continue;
+      const reason = comparison.findings.filter((f) => f.flagged && f.line_id === id).map((f) => f.flag_reason).join(" ");
+      const { error } = await supabase.from("line_items").update({ flagged: true, flag_reason: reason }).eq("id", id).eq("user_id", userId);
+      if (error) throw new Error("Couldn't save the flagged transaction.");
+    }
+    const { error } = await supabase.from("bills").update({ issuer: maskSensitive(data.issuer), bill_total: data.billTotal, confirmed_at: new Date().toISOString(), comparison_result: comparison as unknown as Json }).eq("id", data.billId).eq("user_id", userId);
+    if (error) throw new Error("Couldn't save this comparison.");
+    return { billId: data.billId };
+  });
+
+export const getCheckResult = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => billInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const [b, l] = await Promise.all([
+      supabase.from("bills").select("id,issuer,confirmed_at,comparison_result").eq("id", data.billId).eq("user_id", userId).single(),
+      supabase.from("line_items").select("id,date,description,amount,type,reference_no,flagged,flag_reason").eq("bill_id", data.billId).eq("user_id", userId).order("date"),
+    ]);
+    if (b.error || !b.data || l.error) throw new Error("Couldn't load this check.");
+    const ids = (l.data ?? []).map((r) => r.id);
+    const messages = ids.length ? await supabase.from("messages").select("*").in("line_id", ids).eq("user_id", userId).order("id") : { data: [], error: null };
+    if (messages.error) throw new Error("Couldn't load saved messages.");
+    return { bill: { ...b.data, comparison_result: b.data.comparison_result as unknown as Comparison | null }, lines: l.data ?? [], messages: messages.data ?? [] };
+  });
+
+export const generateCheckDrafts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => billInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: bill, error } = await supabase.from("bills").select("confirmed_at,comparison_result").eq("id", data.billId).eq("user_id", userId).single();
+    if (error || !bill?.confirmed_at || !bill.comparison_result) throw new Error("Confirm the lines before drafting a message.");
+    const comparison = bill.comparison_result as unknown as Comparison;
+    const { writeDraft } = await import("@/lib/draft.server");
+    for (const f of comparison.findings.filter((r) => r.flagged)) {
+      if (!f.line_id || !f.recipient) continue;
+      const existing = await supabase.from("messages").select("id").eq("line_id", f.line_id).eq("user_id", userId).limit(1);
+      if (existing.error) throw new Error("Couldn't read the saved message.");
+      if (existing.data?.length) continue;
+      const draft_text = await writeDraft(f);
+      const { error: saveError } = await supabase.from("messages").insert({ user_id: userId, line_id: f.line_id, sent_to: f.recipient, draft_text });
+      if (saveError) throw new Error("Couldn't save the draft message.");
+    }
+    return { ok: true };
+  });
+
+export const saveMessageDecision = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ messageId: z.string().uuid(), finalText: z.string().max(20000), decision: z.enum(["sent", "not_sending"]) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: message, error } = await supabase.from("messages").select("id,draft_text,sent,words_changed").eq("id", data.messageId).eq("user_id", userId).single();
+    if (error || !message) throw new Error("Couldn't find this message.");
+    if (message.sent) return { wordsChanged: message.words_changed ?? 0 };
+    if (data.decision === "sent" && !data.finalText.trim()) throw new Error("The message is empty.");
+    // Identifiers in the draft remain available for the dispute; other edited text is masked.
+    const final_text = maskSensitive(data.finalText) ?? "";
+    const words_changed = countWordsChanged(message.draft_text ?? "", data.finalText);
+    const { error: saveError } = await supabase.from("messages").update({ final_text, words_changed, sent: data.decision === "sent", sent_at: data.decision === "sent" ? new Date().toISOString() : null, declined_at: data.decision === "not_sending" ? new Date().toISOString() : null }).eq("id", data.messageId).eq("user_id", userId);
+    if (saveError) throw new Error("Couldn't save the message decision.");
+    return { wordsChanged: words_changed };
+  });
