@@ -103,6 +103,52 @@ export const generateCheckDrafts = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const askCheckQuestion = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ billId: z.string().uuid(), question: z.string().min(1).max(2000) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { supabase, userId } = context;
+    const { data: bill, error } = await supabase.from("bills").select("issuer,currency,comparison_result").eq("id", data.billId).eq("user_id", userId).single();
+    const comparison = bill?.comparison_result as unknown as Comparison | null;
+    if (error || !comparison) throw new Error("Confirm the lines before asking questions.");
+    const promises = await supabase.from("promises").select("id,source,item,pnr").eq("bill_id", data.billId).eq("user_id", userId);
+    if (promises.error) throw new Error("Couldn't load the check details.");
+    comparison.findings = comparison.findings.map((f) => presentFinding(f, promises.data?.find((p) => p.id === f.promise_id), bill.issuer, bill.currency));
+    const { answerQuestion } = await import("@/lib/ask.server");
+    const answer = await answerQuestion(comparison, bill.currency, data.question);
+    return { answer };
+  });
+
+export const listChecks = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { supabase, userId } = context;
+    const bills = await supabase.from("bills").select("id,issuer,currency,confirmed_at,uploaded_at,comparison_result").eq("user_id", userId).order("uploaded_at", { ascending: false });
+    if (bills.error) throw new Error("Couldn't load your checks.");
+    const ids = (bills.data ?? []).map((b) => b.id);
+    const lines = ids.length ? await supabase.from("line_items").select("id,bill_id").eq("user_id", userId).in("bill_id", ids) : { data: [], error: null };
+    if (lines.error) throw new Error("Couldn't load your checks.");
+    const lineIds = (lines.data ?? []).map((l) => l.id);
+    const messages = lineIds.length ? await supabase.from("messages").select("line_id,sent,declined_at,words_changed").eq("user_id", userId).in("line_id", lineIds) : { data: [], error: null };
+    if (messages.error) throw new Error("Couldn't load your checks.");
+    const lineBill = new Map((lines.data ?? []).map((l) => [l.id, l.bill_id]));
+    return (bills.data ?? []).map((b) => {
+      const comparison = b.comparison_result as unknown as Comparison | null;
+      const flagged = comparison?.findings.find((f) => f.flagged) ?? null;
+      const billLineIds = new Set((lines.data ?? []).filter((l) => l.bill_id === b.id).map((l) => l.id));
+      const billMessages = (messages.data ?? []).filter((m) => lineBill.get(m.line_id) === b.id || billLineIds.has(m.line_id));
+      const message = billMessages.find((m) => m.sent) ?? billMessages[0] ?? null;
+      return {
+        id: b.id, issuer: b.issuer, currency: b.currency,
+        date: b.confirmed_at ?? b.uploaded_at,
+        status: comparison?.status ?? null,
+        flagged: flagged ? { flag_reason: flagged.flag_reason, missing_amount: flagged.missing_amount, overcharge: flagged.overcharge } : null,
+        sent: message?.sent ?? false, declined: !!message && !message.sent && !!message.declined_at,
+        words_changed: message?.words_changed ?? null,
+      };
+    });
+  });
+
 export const saveMessageDecision = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input) => z.object({ messageId: z.string().uuid(), finalText: z.string().max(20000), decision: z.enum(["sent", "not_sending"]) }).parse(input))
