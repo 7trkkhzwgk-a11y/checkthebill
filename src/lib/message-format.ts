@@ -49,3 +49,19 @@ export function assertExactNumbers(text: string, tokens: (string | number | null
   }
   if (/\d/.test(remaining)) throw new Error("The message changed a number. Your confirmed maths has been saved.");
 }
+
+// Chat answers guard only money amounts; day counts, dates, IDs and question numbers are allowed.
+const MONEY_TOKEN = /[₹$€£]\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*\.\d{2}\b/g;
+const normalizeMoney = (token: string) => new Decimal(token.replace(/[₹$€£,\s]/g, "")).toFixed(2);
+export function assertChatMoney(text: string, allowed: (string | number | null | undefined)[], question: string) {
+  const allowedValues = new Set(
+    allowed
+      .filter((v): v is string | number => v != null && v !== "")
+      .map((v) => normalizeMoney(String(v))),
+  );
+  // Numbers the user stated in their own question are allowed through.
+  for (const match of question.match(MONEY_TOKEN) ?? []) allowedValues.add(normalizeMoney(match));
+  for (const match of text.match(MONEY_TOKEN) ?? []) {
+    if (!allowedValues.has(normalizeMoney(match))) throw new Error("I couldn't answer that safely — please rephrase.");
+  }
+}
