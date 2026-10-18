@@ -11,6 +11,7 @@ const line = z.object({
   bank_ref: z.string().nullable(),
 });
 const promise = z.object({
+  pnr: z.string().nullable().optional(),
   item: z.string().nullable(),
   original_charge: z.number().nullable(),
   promised_amount: z.number().nullable(),
@@ -21,6 +22,7 @@ const promise = z.object({
   status_text: z.string().nullable(),
 });
 export const extractionSchema = z.object({
+  currency: z.string().nullable().optional(),
   issuer: z.string().nullable(),
   source: z.string().nullable(),
   bill_total: z.number().nullable(),
@@ -44,6 +46,7 @@ export function normalizeExtraction(ex: Extraction) {
     ? [ex.refund ?? { item: null, original_charge: null, promised_amount: null, reference_no: null, transaction_id: null, bank_ref: null, promised_on: null, status_text: null }]
     : ex.agreed_items;
   return {
+    currency: ex.currency && /^[A-Z]{3}$/.test(ex.currency) ? ex.currency : null,
     issuer: maskSensitive(ex.issuer),
     source: maskSensitive(ex.source),
     promise_kind: ex.promise_kind,
@@ -51,6 +54,6 @@ export function normalizeExtraction(ex: Extraction) {
     bill_lines: ex.bill_lines
       .filter((l) => l.kind === "transaction" && (l.type === "charge" || l.type === "credit") && !summaryLabel.test(l.description?.trim() ?? ""))
       .map(({ kind: _kind, ...l }) => ({ ...l, date: toDate(l.date), description: maskSensitive(l.description), reference_no: maskSensitive(l.reference_no, "identifier"), bank_ref: maskSensitive(l.bank_ref, "identifier") })),
-    promise_rows: rows.map((p) => ({ ...p, item: maskSensitive(p.item), status_text: maskSensitive(p.status_text), reference_no: maskSensitive(p.reference_no, "identifier"), transaction_id: maskSensitive(p.transaction_id, "identifier"), bank_ref: maskSensitive(p.bank_ref ?? "", "identifier"), promised_on: toDate(p.promised_on) })),
+    promise_rows: rows.map((p) => ({ ...p, pnr: maskSensitive(p.pnr ?? null, "identifier"), item: maskSensitive(p.item), status_text: maskSensitive(p.status_text), reference_no: maskSensitive(p.reference_no, "identifier"), transaction_id: maskSensitive(p.transaction_id, "identifier"), bank_ref: maskSensitive(p.bank_ref ?? "", "identifier"), promised_on: toDate(p.promised_on) })),
   };
 }

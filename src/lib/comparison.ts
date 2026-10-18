@@ -8,6 +8,7 @@ export const reviewedLineSchema = z.object({
   reference_no: z.string().max(500).nullable(), bank_ref: z.string().max(500).nullable(),
 });
 export const reviewedPromiseSchema = z.object({
+  pnr: z.string().max(500).nullable().optional(),
   id: z.string().uuid(), promised_on: z.string().nullable(), item: z.string().max(2000).nullable(),
   original_charge: z.number().finite().nonnegative().nullable(), promised_amount: z.number().finite().nonnegative().nullable(),
   reference_no: z.string().max(500).nullable(), transaction_id: z.string().max(500).nullable(),
@@ -16,6 +17,7 @@ export const reviewedPromiseSchema = z.object({
 export type ReviewedLine = z.infer<typeof reviewedLineSchema>;
 export type ReviewedPromise = z.infer<typeof reviewedPromiseSchema> & { promise_kind?: string | null };
 export type Finding = {
+  currency?: string | null; contact_name?: string | null; item?: string | null; pnr?: string | null; missing_amount?: string | null;
   kind: "refund" | "invoice"; promise_id: string; line_id: string | null;
   charged: string | null; promised: string | null; kept_by_merchant: string | null;
   credit_expected: string | null; credit_found: string | null; overcharge: string | null;
@@ -42,7 +44,7 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     kind, promise_id: p.id, line_id: null, charged: null, promised: p.promised_amount === null ? null : money(p.promised_amount),
     kept_by_merchant: null, credit_expected: null, credit_found: null, overcharge: null,
     promised_on: toDate(p.promised_on), days_waiting: p.promised_on && toDate(p.promised_on) ? Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${p.promised_on}T00:00:00Z`)) / 86400000) : null,
-    refund_id: p.reference_no, transaction_id: p.transaction_id, bank_ref: p.bank_ref ?? "",
+    refund_id: p.reference_no, transaction_id: p.transaction_id, bank_ref: p.bank_ref ?? "", pnr: p.pnr ?? null, item: p.item,
     flagged: false, flag_reason: null, recipient: null, contact_reason: null, issue: null,
   });
   for (const p of refunds) {
@@ -59,6 +61,7 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     const creditCandidates = byRefund.length ? byRefund : credits.filter((l) => equalMoney(l.amount, p.promised_amount));
     const credit = creditCandidates.length === 1 ? creditCandidates[0] : undefined;
     f.credit_found = credit?.amount === null ? null : money(credit?.amount ?? 0);
+    f.missing_amount = f.promised === null || f.credit_found === null ? null : new Decimal(f.promised).minus(f.credit_found).toFixed(2);
     if (credit) usedCredits.add(credit.id);
     f.line_id = charge?.id ?? null;
     if (!charge || charge.amount === null || p.original_charge === null || p.promised_amount === null || creditCandidates.length > 1 || (credit && credit.amount === null)) {
@@ -109,9 +112,10 @@ export function countWordsChanged(draft: string, final: string): number {
 }
 
 export function draftFacts(f: Finding) {
-  return { recipient: f.recipient, charged: f.charged, refund_promised: f.kind === "refund" ? f.promised : null,
-    agreed_price: f.kind === "invoice" ? f.promised : null, kept_by_merchant: f.kept_by_merchant,
-    credit_expected: f.credit_expected, credit_found: f.credit_found, overcharge: f.overcharge,
+  return { recipient: f.contact_name ?? (f.recipient === "BANK" ? "your bank" : "the billing company"), item: f.item, pnr: f.pnr,
+    refund_promised: f.kind === "refund" ? f.promised : null,
+    agreed_price: f.kind === "invoice" ? f.promised : null,
+    credit_found: f.credit_found, missing_amount: f.missing_amount, overcharge: f.overcharge,
     promised_on: f.promised_on, days_waiting: f.days_waiting, refund_id: f.refund_id, transaction_id: f.transaction_id,
     bank_ref: f.bank_ref, request: f.recipient === "MERCHANT" ? "Please provide the bank reference number for this refund ID." : f.recipient === "BANK" ? "Please trace the missing or incomplete refund using this bank reference." : "Please correct this invoice overcharge." };
 }

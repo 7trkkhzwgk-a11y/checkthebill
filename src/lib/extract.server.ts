@@ -28,7 +28,7 @@ export async function extractLines(bill: InFile, promise: InFile): Promise<Extra
 
   const result = streamText({
     model: provider.responses("openai/gpt-6-astra"),
-    instructions: `${EXTRACTION_INSTRUCTION}\n\n${PRIVACY_RULES}\n\nThe first file is the BILL; copy its business issuer into issuer. The second file is the PROMISE; put a short document label in source.`,
+    instructions: `${EXTRACTION_INSTRUCTION}\n\n${PRIVACY_RULES}\n\nThe first file is the BILL; copy its business issuer into issuer. The second file is the PROMISE; copy the actual business issuing the promise into source (e.g. IRCTC), not a generic document label. Copy the printed currency as its ISO code (INR for ₹, USD for US $), or null if undetermined; do not convert currencies. Copy the full printed PNR into pnr or null when absent. Keep item a short factual booked/cancelled item label, without names.`,
     messages: [
       {
         role: "user",
