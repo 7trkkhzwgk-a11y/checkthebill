@@ -32,7 +32,7 @@ export const confirmCheck = createServerFn({ method: "POST" })
       if (date && !toDate(date)) throw new Error("Enter dates as YYYY-MM-DD or leave them empty.");
     }
     const lines = data.lines.map((r) => ({ ...r, date: toDate(r.date), description: maskSensitive(r.description), reference_no: maskSensitive(r.reference_no, "identifier"), bank_ref: maskSensitive(r.bank_ref, "identifier") }));
-    const promises = data.promises.map((r) => ({ ...r, promised_on: toDate(r.promised_on), item: maskSensitive(r.item), source: maskSensitive(r.source), status_text: maskSensitive(r.status_text), bank_ref: r.bank_ref ?? "", promise_kind: p.data?.find((saved) => saved.id === r.id)?.promise_kind ?? null }));
+    const promises = data.promises.map((r) => ({ ...r, pnr: maskSensitive(r.pnr ?? null, "identifier"), promised_on: toDate(r.promised_on), item: maskSensitive(r.item), source: maskSensitive(r.source), status_text: maskSensitive(r.status_text), bank_ref: r.bank_ref ?? "", promise_kind: p.data?.find((saved) => saved.id === r.id)?.promise_kind ?? null }));
     for (const { id, ...row } of lines) {
       const { error } = await supabase.from("line_items").update({ ...row, flagged: false, flag_reason: null }).eq("id", id).eq("bill_id", data.billId).eq("user_id", userId);
       if (error) throw new Error("Couldn't save the confirmed transactions.");
