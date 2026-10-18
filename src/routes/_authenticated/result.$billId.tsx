@@ -60,6 +60,37 @@ function MessageEditor({ message, billId, contactName }: { message: Tables<"mess
   </div>;
 }
 
+function AskQuestion({ billId }: { billId: string }) {
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const ask = useServerFn(askCheckQuestion);
+  async function submit() {
+    setBusy(true);
+    try {
+      const { answer } = await ask({ data: { billId, question } });
+      setAnswer(answer);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Couldn't answer this question."); }
+    finally { setBusy(false); }
+  }
+  return (
+    <section className="mt-8 border-t border-border pt-6">
+      <h2 className="flex items-center gap-2 font-semibold"><MessageCircleQuestion className="h-5 w-5 text-accent" />Ask a question</h2>
+      <p className="mt-1 text-xs text-muted-foreground">Answers use only this check's saved maths, references and contact routing.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {["Who do I contact and what do I do?", "What if they don't reply in 7 days?"].map((suggestion) => (
+          <Button key={suggestion} size="sm" variant="outline" disabled={busy} onClick={() => setQuestion(suggestion)}>{suggestion}</Button>
+        ))}
+      </div>
+      <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} disabled={busy} placeholder="Ask about this check…" className="mt-3 min-h-20 text-sm" />
+      <Button variant="signal" className="mt-3" disabled={busy || !question.trim()} onClick={submit}>
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Ask
+      </Button>
+      {answer && <p className="mt-4 whitespace-pre-wrap border-l-2 border-accent pl-4 text-sm leading-relaxed">{answer}</p>}
+    </section>
+  );
+}
+
 function ResultPage() {
   const { billId } = Route.useParams();
   const { data } = useSuspenseQuery(resultQuery(billId));
