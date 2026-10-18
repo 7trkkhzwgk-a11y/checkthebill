@@ -1,4 +1,5 @@
-# Extraction corrections
-- [x] Correct masking and extraction schema, filtering, and persistence.
-- [x] Show labelled promise cards and a transaction-only bill table with separate total.
-- [x] Test rules and verify authenticated upload and review.
+# Confirmed checks and dispute messages
+- [ ] Save confirmed edits and run deterministic matching, maths, flagging and contact routing on the server.
+- [ ] Persist results and AI drafts; add sent/not-sending tracking and word-edit counts.
+- [ ] Add the results page and connect Looks right.
+- [ ] Test each matching rule and verify the signed-in confirmation-to-message flow.
