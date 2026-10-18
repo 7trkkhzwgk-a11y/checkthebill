@@ -2,7 +2,7 @@ import { getRequest, setResponseHeader } from "@tanstack/react-start/server";
 import { createResponsesCall } from "@/lib/ai/responses.server";
 import { draftFacts, type Comparison, type Finding } from "@/lib/comparison";
 import { maskWithIdentifiers } from "@/lib/mask";
-import { assertExactNumbers, formatCurrency } from "@/lib/message-format";
+import { assertChatMoney, formatCurrency } from "@/lib/message-format";
 
 // Follow-up answers use only this case's computed facts; document text is never sent.
 export async function answerQuestion(comparison: Comparison, currency: string | null, question: string): Promise<string> {
@@ -18,6 +18,8 @@ export async function answerQuestion(comparison: Comparison, currency: string | 
       missing_amount: facts.missing_amount == null ? null : formatCurrency(facts.missing_amount, f.currency ?? currency),
       overcharge: facts.overcharge == null ? null : formatCurrency(facts.overcharge, f.currency ?? currency),
       flagged: f.flagged, contact_reason: f.contact_reason, status: comparison.status,
+      // Future timeframes the user asks about are computed in code, never by the AI.
+      derived: deriveDaysWaiting(f.days_waiting, question),
     };
   });
   const { result } = createResponsesCall(getRequest(), { baseURL: "https://ai.gateway.lovable.dev/v1", apiKey, model: "openai/gpt-6-astra" },
@@ -29,7 +31,8 @@ export async function answerQuestion(comparison: Comparison, currency: string | 
   Object.entries(response.headers ?? {}).forEach(([name, value]) => { if (name.toLowerCase().startsWith("x-lovable-aig-") && value) setResponseHeader(name, value); });
   const ids = comparison.findings.flatMap((f) => [f.refund_id, f.transaction_id, f.bank_ref, f.pnr]).filter((id): id is string => !!id);
   const protectedText = maskWithIdentifiers(text, ids);
+  // Guard money amounts only: every currency-looking number must be a code-calculated value for this case.
   const amounts = comparison.findings.flatMap((f) => [f.promised, f.charged, f.credit_found, f.missing_amount, f.overcharge].map((v) => (v == null ? null : formatCurrency(v, f.currency ?? currency))));
-  assertExactNumbers(text, [...ids, ...amounts, ...comparison.findings.map((f) => f.promised_on), ...comparison.findings.map((f) => f.days_waiting)]);
+  assertChatMoney(text, amounts, question);
   return protectedText;
 }
