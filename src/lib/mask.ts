@@ -2,9 +2,17 @@
 // Names, patient names and addresses are masked by the AI step (it is told to
 // replace them with [NAME] / [ADDRESS]); this pass is a deterministic safety net.
 
-export function maskSensitive(input: string | null | undefined): string | null {
+export function maskSensitive(input: string | null | undefined, mode: "text" | "identifier" = "text"): string | null {
   if (input == null) return null;
   let s = String(input);
+
+  // IDs are not payment credentials, even when they contain 13–19 digits.
+  if (mode === "identifier") return s;
+  const identifiers: string[] = [];
+  s = s.replace(/\b(?:transaction|refund|cancellation|invoice|bank\s+reference|reference|pnr)(?:\s*(?:id|no\.?|number|#))?\s*[:#]?\s*[A-Z0-9][A-Z0-9_-]*/gi, (value) => {
+    identifiers.push(value);
+    return `\uE000${String.fromCharCode(0xE100 + identifiers.length - 1)}\uE001`;
+  });
 
   // Card numbers: 13-19 digits, optionally separated by spaces/dashes. Keep last 4.
   s = s.replace(/\b(?:\d[ -]?){12,18}\d\b/g, (m) => {
@@ -20,7 +28,7 @@ export function maskSensitive(input: string | null | undefined): string | null {
 
   // Account numbers: labelled "acct/account/a/c" followed by digits.
   s = s.replace(
-    /\b(acct|account|a\/c|iban|routing)(\s*(?:no\.?|number|#)?\s*[:#]?\s*)([A-Z0-9][A-Z0-9 -]{3,})/gi,
+    /\b(acct|account|a\/c|iban|routing)(\s*(?:no\.?|number|#)?\s*[:#]?\s*)((?:[A-Z]{2}\d{2}[A-Z0-9]*|\d[\d -]*\d))\b/gi,
     (_m, label: string, sep: string, num: string) => {
       const clean = num.replace(/[^A-Z0-9]/gi, "");
       return `${label}${sep}•••• ${clean.slice(-4)}`;
@@ -30,5 +38,5 @@ export function maskSensitive(input: string | null | undefined): string | null {
   // Already-masked card forms like XXXX1234 / ****1234 normalise to •••• 1234
   s = s.replace(/[X*•]{4,}[ -]?(\d{4})\b/gi, "•••• $1");
 
-  return s;
+  return s.replace(/\uE000([\uE100-\uF8FF])\uE001/g, (_m, key: string) => identifiers[key.charCodeAt(0) - 0xE100] ?? "");
 }
