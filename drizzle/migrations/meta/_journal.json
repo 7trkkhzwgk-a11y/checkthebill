@@ -22,6 +22,13 @@
       "when": 1792361890852,
       "tag": "0002_extraction_refund_details",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792362356596,
+      "tag": "0003_confirmed_comparison_results",
+      "breakpoints": true
     }
   ]
 }

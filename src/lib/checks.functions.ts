@@ -72,6 +72,7 @@ export const runExtraction = createServerFn({ method: "POST" })
         bill_id: bill.id,
         source: ex.source,
         ...l,
+          promise_kind: ex.promise_kind,
         file_link: data.promise.path,
       })),
     );

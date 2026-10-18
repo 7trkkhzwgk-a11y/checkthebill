@@ -17,6 +17,7 @@ export type Database = {
       bills: {
         Row: {
           bill_total: number | null
+          comparison_result: Json | null
           confirmed_at: string | null
           file_link: string
           id: string
@@ -26,6 +27,7 @@ export type Database = {
         }
         Insert: {
           bill_total?: number | null
+          comparison_result?: Json | null
           confirmed_at?: string | null
           file_link: string
           id?: string
@@ -35,6 +37,7 @@ export type Database = {
         }
         Update: {
           bill_total?: number | null
+          comparison_result?: Json | null
           confirmed_at?: string | null
           file_link?: string
           id?: string
@@ -96,6 +99,7 @@ export type Database = {
       }
       messages: {
         Row: {
+          declined_at: string | null
           draft_text: string | null
           final_text: string | null
           id: string
@@ -107,6 +111,7 @@ export type Database = {
           words_changed: number | null
         }
         Insert: {
+          declined_at?: string | null
           draft_text?: string | null
           final_text?: string | null
           id?: string
@@ -118,6 +123,7 @@ export type Database = {
           words_changed?: number | null
         }
         Update: {
+          declined_at?: string | null
           draft_text?: string | null
           final_text?: string | null
           id?: string
@@ -146,6 +152,7 @@ export type Database = {
           id: string
           item: string | null
           original_charge: number | null
+          promise_kind: string | null
           promised_amount: number | null
           promised_on: string | null
           reference_no: string | null
@@ -161,6 +168,7 @@ export type Database = {
           id?: string
           item?: string | null
           original_charge?: number | null
+          promise_kind?: string | null
           promised_amount?: number | null
           promised_on?: string | null
           reference_no?: string | null
@@ -176,6 +184,7 @@ export type Database = {
           id?: string
           item?: string | null
           original_charge?: number | null
+          promise_kind?: string | null
           promised_amount?: number | null
           promised_on?: string | null
           reference_no?: string | null

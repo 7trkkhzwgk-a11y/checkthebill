@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedNewRouteImport } from './routes/_authenticated/new'
 import { Route as AuthenticatedCheckBillIdRouteImport } from './routes/_authenticated/check.$billId'
+import { Route as AuthenticatedResultBillIdRouteImport } from './routes/_authenticated/result.$billId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,18 +41,26 @@ const AuthenticatedCheckBillIdRoute =
     path: '/check/$billId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedResultBillIdRoute =
+  AuthenticatedResultBillIdRouteImport.update({
+    id: '/result/$billId',
+    path: '/result/$billId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/new': typeof AuthenticatedNewRoute
   '/check/$billId': typeof AuthenticatedCheckBillIdRoute
+  '/result/$billId': typeof AuthenticatedResultBillIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/new': typeof AuthenticatedNewRoute
   '/check/$billId': typeof AuthenticatedCheckBillIdRoute
+  '/result/$billId': typeof AuthenticatedResultBillIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -60,12 +69,13 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/new': typeof AuthenticatedNewRoute
   '/_authenticated/check/$billId': typeof AuthenticatedCheckBillIdRoute
+  '/_authenticated/result/$billId': typeof AuthenticatedResultBillIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/new' | '/check/$billId'
+  fullPaths: '/' | '/auth' | '/new' | '/check/$billId' | '/result/$billId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/new' | '/check/$billId'
+  to: '/' | '/auth' | '/new' | '/check/$billId' | '/result/$billId'
   id:
     | '__root__'
     | '/'
@@ -73,6 +83,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/new'
     | '/_authenticated/check/$billId'
+    | '/_authenticated/result/$billId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -118,17 +129,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCheckBillIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/result/$billId': {
+      id: '/_authenticated/result/$billId'
+      path: '/result/$billId'
+      fullPath: '/result/$billId'
+      preLoaderRoute: typeof AuthenticatedResultBillIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedNewRoute: typeof AuthenticatedNewRoute
   AuthenticatedCheckBillIdRoute: typeof AuthenticatedCheckBillIdRoute
+  AuthenticatedResultBillIdRoute: typeof AuthenticatedResultBillIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedNewRoute: AuthenticatedNewRoute,
   AuthenticatedCheckBillIdRoute: AuthenticatedCheckBillIdRoute,
+  AuthenticatedResultBillIdRoute: AuthenticatedResultBillIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

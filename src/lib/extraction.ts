@@ -46,6 +46,7 @@ export function normalizeExtraction(ex: Extraction) {
   return {
     issuer: maskSensitive(ex.issuer),
     source: maskSensitive(ex.source),
+    promise_kind: ex.promise_kind,
     bill_total: ex.bill_total,
     bill_lines: ex.bill_lines
       .filter((l) => l.kind === "transaction" && (l.type === "charge" || l.type === "credit") && !summaryLabel.test(l.description?.trim() ?? ""))

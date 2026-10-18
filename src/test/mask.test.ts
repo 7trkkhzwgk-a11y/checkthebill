@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { maskSensitive } from "@/lib/mask";
+import { maskSensitive, maskWithIdentifiers } from "@/lib/mask";
 
 describe("maskSensitive", () => {
   it("masks a card number keeping last 4", () => {
@@ -22,5 +22,9 @@ describe("maskSensitive", () => {
     for (const label of ["Transaction ID", "Refund ID", "PNR", "Invoice number", "Reference number", "Bank Reference Id"]) {
       expect(maskSensitive(`${label}: 4111111111111234`)).toBe(`${label}: 4111111111111234`);
     }
+  });
+  it("preserves known full IDs even without labels while masking other card numbers", () => {
+    expect(maskWithIdentifiers("Trace 9876543210987654; card 4111 1111 1111 1234", ["9876543210987654"]))
+      .toBe("Trace 9876543210987654; card •••• 1234");
   });
 });
