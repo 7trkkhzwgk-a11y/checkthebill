@@ -20,7 +20,7 @@ export const confirmCheck = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const [b, l, p] = await Promise.all([
-      supabase.from("bills").select("id,confirmed_at,comparison_result").eq("id", data.billId).eq("user_id", userId).single(),
+      supabase.from("bills").select("id,confirmed_at,comparison_result,orders_subtotal,sales_tax").eq("id", data.billId).eq("user_id", userId).single(),
       supabase.from("line_items").select("id").eq("bill_id", data.billId).eq("user_id", userId),
       supabase.from("promises").select("id,promise_kind").eq("bill_id", data.billId).eq("user_id", userId),
     ]);
@@ -42,7 +42,7 @@ export const confirmCheck = createServerFn({ method: "POST" })
       if (error) throw new Error("Couldn't save the confirmed promise.");
     }
     const today = new Date().toISOString().slice(0, 10);
-    const comparison = compareConfirmed(lines, promises, today);
+    const comparison = compareConfirmed(lines, promises, today, { orders_subtotal: b.data.orders_subtotal ?? null, sales_tax: b.data.sales_tax ?? null });
     comparison.findings = comparison.findings.map((f) => presentFinding(f, promises.find((p) => p.id === f.promise_id), maskSensitive(data.issuer), currencyCode(data.currency)));
     const flaggedIds = [...new Set(comparison.findings.filter((f) => f.flagged && f.line_id).map((f) => f.line_id))];
     for (const id of flaggedIds) {
