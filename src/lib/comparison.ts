@@ -25,7 +25,7 @@ export const reviewedPromiseSchema = z.object({
 export type ReviewedLine = z.infer<typeof reviewedLineSchema>;
 export type ReviewedPromise = z.infer<typeof reviewedPromiseSchema> & { promise_kind?: string | null };
 export type Finding = {
-  typed_promise?: boolean; tax_checks?: TaxCheck[];
+  typed_promise?: boolean; typed_stated_amount?: string; typed_tax_inclusive?: boolean | null; tax_checks?: TaxCheck[];
   order_no?: string | null; invoice_item?: string | null; disposition?: "matched" | "included" | "not_comparable" | "no_contract" | "staged";
   currency?: string | null; contact_name?: string | null; item?: string | null; pnr?: string | null; missing_amount?: string | null;
   kind: "refund" | "invoice"; promise_id: string; line_id: string | null;
@@ -310,6 +310,7 @@ export function countWordsChanged(draft: string, final: string): number {
 
 export function draftFacts(f: Finding) {
   return { recipient: f.contact_name ?? (f.recipient === "BANK" ? "your bank" : f.kind === "refund" ? "the merchant" : "the billing company"), item: f.kind === "invoice" ? f.invoice_item ?? f.item : f.item, pnr: f.pnr,
+    ...(f.typed_promise ? { typed_promise: true, tax_checks: f.tax_checks ?? [] } : {}),
     ...(f.kind === "invoice" ? { order_no: f.order_no ?? null } : {}),
     refund_promised: f.kind === "refund" ? f.promised : null,
     agreed_price: f.kind === "invoice" ? f.promised : null,

@@ -1,7 +1,7 @@
 # Typed promises
-- [ ] Add optional text entry and private structured extraction.
-- [ ] Add editable typed fields, deterministic tax checks and verbal-promise messages.
-- [ ] Test typed examples and re-run signed-in IRCTC and Dandy results.
+- [x] Add optional text entry and private structured extraction.
+- [x] Add editable typed fields, deterministic tax checks and verbal-promise messages.
+- [x] Test typed examples and re-run signed-in IRCTC and Dandy results: typed upload → editable review → tax difference ₹0.18 → saved confirmation message verified; IRCTC recipient/request and Dandy reconciliation unchanged; 146 tests pass.
 
 # Fixed invoice aliases
 - [x] Fix section-aware price-list parsing, starred prices and saved counts; extend aliases and show three nearest names for unmatched items. All 133 tests pass; build OK.
