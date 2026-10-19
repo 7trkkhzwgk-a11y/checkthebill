@@ -82,7 +82,7 @@ function NewCheck() {
           step = `Reading promise page ${batch.first} of ${batch.total}`;
           setBusy(`${step}…`);
           const file = await upload(batch.file, "promise-batch"); temporary.push(file.path);
-          const result = await readPart({ data: { file, part: billType === "lab_invoice" ? "price_list" : "refund_promise", readingId } });
+          const result = await readPart({ data: { file, sourcePath: p.path, part: billType === "lab_invoice" ? "price_list" : "refund_promise", readingId } });
           if (!result.ok) throw new Error(result.error);
           pricePaths.push(result.cachePath);
         }

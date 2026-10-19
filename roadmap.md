@@ -1,8 +1,9 @@
 # Groq migration
-- [ ] Move all document reading, drafts and chat to server-only Groq with requested models.
-- [ ] Read PDF text in code, batch text pages, render scans locally, and persist reusable price lists.
-- [ ] Add bounded rate-limit retries and per-check token usage on results; preserve deterministic rules.
-- [ ] Test the migration, then request GROQ_API_KEY securely; live verification waits for the secret.
+- [x] Move all document reading, drafts and chat to server-only Groq with requested models.
+- [x] Read PDF text in code, batch text pages, render scans locally, and persist reusable price lists.
+- [x] Add bounded rate-limit retries and per-check token usage on results; preserve deterministic rules.
+- [x] 94 tests pass; browser verified four-page text batches, scan images and clear missing-key state.
+- [ ] Verify real Groq extraction, cache reuse, drafts, chat and saved token totals, then publish — blocked until GROQ_API_KEY is added securely.
 
 # Published invoice reading
 - [x] Split lab invoice PDFs into single-page private uploads and sequential server requests with progress.

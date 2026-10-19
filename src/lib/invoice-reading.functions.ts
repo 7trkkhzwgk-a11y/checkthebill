@@ -6,7 +6,7 @@ import { combineInvoicePages, maskedExtraction, readingStepError } from "@/lib/i
 import { z } from "zod";
 
 const documentSchema = z.object({ path: z.string().min(1), name: z.string(), mime: z.enum(["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain"]) });
-const partSchema = z.object({ file: documentSchema, readingId: z.string().uuid(), part: z.enum(["invoice", "price_list", "bill", "refund_promise"]), previousOrder: z.string().nullable().optional() });
+const partSchema = z.object({ file: documentSchema, sourcePath: z.string().optional(), readingId: z.string().uuid(), part: z.enum(["invoice", "price_list", "bill", "refund_promise"]), previousOrder: z.string().nullable().optional() });
 const CACHE_VERSION = "groq-v1";
 
 function ownPath(path: string, userId: string) {
@@ -20,6 +20,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
     const step = data.part === "price_list" ? "Reading price list" : data.part === "refund_promise" ? "Reading refund promise" : "Reading bill pages";
     try {
       ownPath(data.file.path, context.userId);
+      if (data.sourcePath) ownPath(data.sourcePath, context.userId);
       const { loadDocument } = await import("@/lib/extraction-storage.server");
       const { extractInvoicePart } = await import("@/lib/extract.server");
       const file = await loadDocument(context.supabase, data.file);
@@ -37,7 +38,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
       if (!output) {
         output = maskedExtraction(await extractInvoicePart(file, data.part, data.previousOrder ?? null, usageSink(context.supabase, context.userId, data.part, { readingId: data.readingId })));
         if (data.part === "price_list") {
-          const { error } = await context.supabase.from("price_list_cache").upsert({ user_id: context.userId, content_hash: `${CACHE_VERSION}-${hash}`, extraction: JSON.parse(JSON.stringify(output)), file_link: data.file.path }, { onConflict: "user_id,content_hash" });
+          const { error } = await context.supabase.from("price_list_cache").upsert({ user_id: context.userId, content_hash: `${CACHE_VERSION}-${hash}`, extraction: JSON.parse(JSON.stringify(output)), file_link: data.sourcePath ?? data.file.path }, { onConflict: "user_id,content_hash" });
           if (error) throw new Error("Couldn't save the structured price list.");
         }
       }
