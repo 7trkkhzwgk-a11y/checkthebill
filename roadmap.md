@@ -1,3 +1,8 @@
+# Typed promises
+- [ ] Add optional text entry and private structured extraction.
+- [ ] Add editable typed fields, deterministic tax checks and verbal-promise messages.
+- [ ] Test typed examples and re-run signed-in IRCTC and Dandy results.
+
 # Fixed invoice aliases
 - [x] Fix section-aware price-list parsing, starred prices and saved counts; extend aliases and show three nearest names for unmatched items. All 133 tests pass; build OK.
 - [x] Replace the owner's old saved price list from the original five-page PDF: 99 logical rows across 16 sections, including all 4 Signature rows; signed-in results show 24 matches, only Additional Wax Rim in review, unchanged reconciliation and a review-only draft.
