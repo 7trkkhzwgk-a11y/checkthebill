@@ -28,3 +28,10 @@
 - [x] Handle included items, grouped confirmations and crown material matching.
 - [x] Show unmatched lines separately and top-level reconciliation.
 - [x] Run rule tests and verify the signed-in review-to-result flow.
+
+# Lab result summary and buckets
+- [ ] Count tax once per order and reconcile items, tax, credits and total.
+- [ ] Classify every item once; suppress all staged-item comparison maths.
+- [ ] Show calculated summary and collapsed buckets, with included items hidden initially.
+- [ ] Save one short billing-team message covering all unmatched review items.
+- [ ] Test the rules and verify the signed-in result and saved message.
