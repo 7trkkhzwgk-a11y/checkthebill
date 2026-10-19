@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertExactNumbers, formatCurrency, presentFinding } from "@/lib/message-format";
+import { assertExactNumbers, assertMessageRouting, formatCurrency, presentFinding } from "@/lib/message-format";
 import { compareConfirmed, draftFacts } from "@/lib/comparison";
 
 const promise = { id: "p", item: "Train ticket refund", pnr: "1234567890", original_charge: 7475.40, promised_amount: 7180, promised_on: "2026-09-24", reference_no: "100006792070399", transaction_id: "100001447873288", bank_ref: "", source: "IRCTC", status_text: null, promise_kind: "refund" };
@@ -10,6 +10,31 @@ function finding(bankRef = "") {
   return presentFinding(f, promise, "Example Bank", "INR");
 }
 describe("result and message facts", () => {
+  it("routes blank-reference refunds to IRCTC, never DEMO BANK, even with stale routing", () => {
+    const f = presentFinding({ ...finding(), recipient: "BANK", contact_name: "DEMO BANK", bank_ref: "OLD" }, { ...promise, bank_ref: " " }, "DEMO BANK", "INR");
+    expect(f.recipient).toBe("MERCHANT");
+    expect(draftFacts(f)).toMatchObject({ recipient: "IRCTC", request: "Please provide the bank reference number for refund ID 100006792070399." });
+  });
+  it("routes reference-present refunds to the bank with the exact missing amount and reference", () => {
+    const f = presentFinding(finding(), { ...promise, bank_ref: "BANK-123" }, "DEMO BANK", "INR");
+    expect(f.recipient).toBe("BANK");
+    expect(draftFacts(f)).toMatchObject({ recipient: "DEMO BANK", request: "Please trace and credit ₹7,180.00 using bank reference BANK-123." });
+  });
+  it("uses the invoice issuer, not the price-list source, for vendor messages", () => {
+    const raw = compareConfirmed([line], [{ ...promise, item: "Train ticket", source: "Contract publisher", promise_kind: "price_list", original_charge: null, transaction_id: null }], "2026-10-18").findings[0];
+    if (!raw) throw new Error("No invoice finding");
+    const f = presentFinding(raw, { source: "Contract publisher" }, "Vendor Lab", "USD");
+    expect(draftFacts(f)).toMatchObject({ recipient: "Vendor Lab", request: "Please correct this invoice overcharge." });
+  });
+  it("rejects mixed or repeated refund requests while accepting the single routed ask", () => {
+    const f = finding();
+    const message = `Dear IRCTC Customer Care,\n${draftFacts(f).request}`;
+    expect(() => assertMessageRouting(message, f)).not.toThrow();
+    expect(() => assertMessageRouting(`${message}\nPlease trace the refund.`, f)).toThrow();
+    expect(() => assertMessageRouting(`${message}\n${draftFacts(f).request}`, f)).toThrow();
+    const bank = finding("BANK-123");
+    expect(() => assertMessageRouting(`Dear Example Bank Customer Care,\n${draftFacts(bank).request}\nPlease provide the bank reference.`, bank)).toThrow();
+  });
   it("formats INR with rupee symbol, commas and exact two decimals", () => {
     expect(formatCurrency("7475.40", "INR")).toBe("₹7,475.40");
     expect(formatCurrency("7180.00", "INR")).toBe("₹7,180.00");

@@ -2,7 +2,7 @@ import { getRequest, setResponseHeader } from "@tanstack/react-start/server";
 import { createResponsesCall } from "@/lib/ai/responses.server";
 import { draftFacts, type Finding } from "@/lib/comparison";
 import { maskWithIdentifiers } from "@/lib/mask";
-import { assertExactNumbers, formatCurrency } from "@/lib/message-format";
+import { assertExactNumbers, assertMessageRouting, formatCurrency } from "@/lib/message-format";
 
 export async function writeDraft(finding: Finding): Promise<string> {
   const apiKey = process.env["LOVABLE_API_KEY"];
@@ -24,6 +24,7 @@ export async function writeDraft(finding: Finding): Promise<string> {
   const protectedText = maskWithIdentifiers(text, ids);
   for (const id of ids) if (!protectedText.includes(id)) throw new Error("The message did not preserve the references. Your confirmed maths has been saved.");
   assertExactNumbers(text, [...ids, ...formatted, finding.promised_on, finding.days_waiting]);
+  assertMessageRouting(text, finding);
   if (!text.startsWith("Subject:") || !text.endsWith("Regards,") || !text.includes(`Dear ${facts.recipient} Customer Care,`) || /kept by|cancellation fee|deduct(?:ion|ed)/i.test(text)) throw new Error("The message format was not preserved. Your confirmed maths has been saved.");
   return protectedText;
 }
