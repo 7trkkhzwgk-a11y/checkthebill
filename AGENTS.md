@@ -10,6 +10,7 @@
 <!-- LOVABLE:END -->
 
 - Document structuring runs only through authenticated server functions and all extracted text passes maskSensitive before saving — why: privacy rules require no AI calls or unmasked extracted data from the browser.
+- Typed promises use nullable structured promise metadata and a separate pure Decimal comparison path after confirmation; typed drafts are deterministic and request company confirmation — why: verbal evidence and tax checks must not alter document matching, routing or calculation rules.
 - Uploaded files live in the private "documents" bucket under <user_id>/; tables store only the storage path — why: per-user storage RLS.
 - Extraction schemas and normalization live in a browser-safe shared module used by the server persistence boundary — why: deterministic transaction filtering and identifier-safe masking must be independently testable.
 - Extraction validates required-but-nullable fields after a complete provider JSON response and surfaces provider errors before validation — why: malformed output must never hide actionable service failures or reach persistence.
