@@ -6,6 +6,7 @@ import { maskSensitive, maskWithIdentifiers } from "@/lib/mask";
 import { toDate } from "@/lib/extraction";
 import type { Json } from "@/integrations/supabase/types";
 import { currencyCode, DRAFT_VERSION, presentFinding } from "@/lib/message-format";
+import { invoiceReviewDraft, REVIEW_DRAFT_VERSION } from "@/lib/invoice-results";
 
 const billInput = z.object({ billId: z.string().uuid() });
 const confirmationInput = billInput.extend({
@@ -43,7 +44,7 @@ export const confirmCheck = createServerFn({ method: "POST" })
       if (error) throw new Error("Couldn't save the confirmed promise.");
     }
     const today = new Date().toISOString().slice(0, 10);
-    const comparison = compareConfirmed(lines, promises, today, { orders_subtotal: b.data.orders_subtotal ?? null, sales_tax: b.data.sales_tax ?? null, confirmed_matches: data.confirmedMatches ?? {} });
+    const comparison = compareConfirmed(lines, promises, today, { orders_subtotal: b.data.orders_subtotal ?? null, sales_tax: b.data.sales_tax ?? null, bill_total: data.billTotal, confirmed_matches: data.confirmedMatches ?? {} });
     comparison.findings = comparison.findings.map((f) => presentFinding(f, promises.find((p) => p.id === f.promise_id), maskSensitive(data.issuer), currencyCode(data.currency)));
     const flaggedIds = [...new Set(comparison.findings.filter((f) => f.flagged && f.line_id).map((f) => f.line_id))];
     for (const id of flaggedIds) {
@@ -63,15 +64,22 @@ export const getCheckResult = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const [b, l, p] = await Promise.all([
-      supabase.from("bills").select("id,issuer,currency,confirmed_at,comparison_result,bill_type,orders_subtotal").eq("id", data.billId).eq("user_id", userId).single(),
-      supabase.from("line_items").select("id,date,description,amount,type,reference_no,order_no,flagged,flag_reason").eq("bill_id", data.billId).eq("user_id", userId).order("date"),
-      supabase.from("promises").select("id,source,item,pnr").eq("bill_id", data.billId).eq("user_id", userId),
+      supabase.from("bills").select("id,issuer,currency,confirmed_at,comparison_result,bill_type,orders_subtotal,sales_tax,bill_total").eq("id", data.billId).eq("user_id", userId).single(),
+      supabase.from("line_items").select("*").eq("bill_id", data.billId).eq("user_id", userId).order("date"),
+      supabase.from("promises").select("*").eq("bill_id", data.billId).eq("user_id", userId),
     ]);
     if (b.error || !b.data || l.error || p.error) throw new Error("Couldn't load this check.");
     const ids = (l.data ?? []).map((r) => r.id);
     const messages = ids.length ? await supabase.from("messages").select("*").in("line_id", ids).eq("user_id", userId).order("id") : { data: [], error: null };
     if (messages.error) throw new Error("Couldn't load saved messages.");
-    const comparison = b.data.comparison_result as unknown as Comparison | null;
+    let comparison = b.data.comparison_result as unknown as Comparison | null;
+    if (comparison && b.data.confirmed_at && b.data.bill_type === "lab_invoice") {
+      const confirmed_matches = Object.fromEntries(comparison.findings.filter((f) => f.line_id && f.promise_id).map((f) => [f.line_id, f.promise_id]));
+      comparison = compareConfirmed((l.data ?? []).map((row) => reviewedLineSchema.parse(row)), (p.data ?? []).map((row) => ({ ...reviewedPromiseSchema.parse(row), promise_kind: row.promise_kind })), comparison.checked_on,
+        { orders_subtotal: b.data.orders_subtotal, sales_tax: b.data.sales_tax, bill_total: b.data.bill_total, confirmed_matches });
+      const { error: saveError } = await supabase.from("bills").update({ comparison_result: comparison as unknown as Json }).eq("id", data.billId).eq("user_id", userId);
+      if (saveError) throw new Error("Couldn't save the updated lab summary.");
+    }
     if (comparison) comparison.findings = comparison.findings.map((f) => presentFinding(f, p.data?.find((r) => r.id === f.promise_id), b.data.issuer, b.data.currency));
     return { bill: { ...b.data, comparison_result: comparison }, lines: l.data ?? [], messages: messages.data ?? [] };
   });
@@ -88,6 +96,21 @@ export const generateCheckDrafts = createServerFn({ method: "POST" })
     if (promises.error) throw new Error("Couldn't load the message recipient.");
     comparison.findings = comparison.findings.map((f) => presentFinding(f, promises.data?.find((p) => p.id === f.promise_id), bill.issuer, bill.currency));
     const { writeDraft } = await import("@/lib/draft.server");
+    const review = comparison.findings.filter((f) => f.kind === "invoice" && f.disposition === "no_contract");
+    const firstReview = review[0];
+    if (firstReview?.line_id) {
+      const existing = await supabase.from("messages").select("id,sent,declined_at,final_text,draft_version").eq("line_id", firstReview.line_id).eq("user_id", userId).limit(1);
+      if (existing.error) throw new Error("Couldn't read the saved review message.");
+      const saved = existing.data?.[0];
+      if (!saved || (!saved.sent && !saved.declined_at && saved.final_text === null && saved.draft_version !== REVIEW_DRAFT_VERSION)) {
+        const recipient = firstReview.contact_name ?? bill.issuer ?? "the vendor";
+        const identifiers = review.flatMap((f) => [f.order_no ?? null]);
+        const row = { sent_to: recipient, draft_text: maskWithIdentifiers(invoiceReviewDraft(review, recipient, bill.currency), identifiers), draft_version: REVIEW_DRAFT_VERSION };
+        const result = saved ? await supabase.from("messages").update(row).eq("id", saved.id).eq("user_id", userId).eq("sent", false).is("final_text", null).is("declined_at", null)
+          : await supabase.from("messages").insert({ user_id: userId, line_id: firstReview.line_id, ...row });
+        if (result.error) throw new Error("Couldn't save the review message.");
+      }
+    }
     for (const f of comparison.findings.filter((r) => r.flagged)) {
       if (!f.line_id || !f.recipient) continue;
       const existing = await supabase.from("messages").select("id,sent,declined_at,final_text,draft_version").eq("line_id", f.line_id).eq("user_id", userId).limit(1);
@@ -165,7 +188,7 @@ export const saveMessageDecision = createServerFn({ method: "POST" })
     const bill = await supabase.from("bills").select("comparison_result").eq("id", line.data.bill_id).eq("user_id", userId).single();
     if (bill.error || !bill.data) throw new Error("Couldn't find the message check.");
     const comparison = bill.data.comparison_result as unknown as Comparison | null;
-    const identifiers = comparison?.findings.filter((f) => f.line_id === message.line_id).flatMap((f) => [f.refund_id, f.transaction_id, f.bank_ref, f.pnr ?? null, f.order_no ?? null]) ?? [];
+    const identifiers = comparison?.findings.flatMap((f) => [f.refund_id, f.transaction_id, f.bank_ref, f.pnr ?? null, f.order_no ?? null]) ?? [];
     const final_text = maskWithIdentifiers(data.finalText, identifiers);
     const words_changed = countWordsChanged(message.draft_text ?? "", final_text);
     const { error: saveError } = await supabase.from("messages").update({ final_text, words_changed, sent: data.decision === "sent", sent_at: data.decision === "sent" ? new Date().toISOString() : null, declined_at: data.decision === "not_sending" ? new Date().toISOString() : null }).eq("id", data.messageId).eq("user_id", userId);
