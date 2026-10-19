@@ -48,7 +48,7 @@ export const confirmCheck = createServerFn({ method: "POST" })
       if (error) throw new Error("Couldn't save the confirmed transactions.");
     }
     for (const { id, ...row } of promises) {
-      const { error } = await supabase.from("promises").update(row).eq("id", id).eq("bill_id", data.billId).eq("user_id", userId);
+      const { error } = await supabase.from("promises").update({ ...row, typed_details: row.typed_details ? JSON.parse(JSON.stringify(row.typed_details)) : null }).eq("id", id).eq("bill_id", data.billId).eq("user_id", userId);
       if (error) throw new Error("Couldn't save the confirmed promise.");
     }
     const today = new Date().toISOString().slice(0, 10);

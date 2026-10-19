@@ -19,7 +19,7 @@ const actualName = (value: string | null | undefined) => {
   const name = value?.replace(/\s+(?:(?:cancellation\s*\/\s*)?refund\s+confirmation|contract|price list|invoice|statement)$/i, "").trim();
   return name && !/^(?:refund(?: confirmation)?|contract|price list|promise|bill|invoice|merchant|bank|vendor)$/i.test(name) ? name : null;
 };
-export function presentFinding(f: Finding, promise: Partial<ReviewedPromise> | undefined, issuer: string | null, currency: string | null): Finding {
+export function presentFinding(f: Finding, promise: Partial<Pick<ReviewedPromise, "source" | "bank_ref" | "pnr" | "item">> | undefined, issuer: string | null, currency: string | null): Finding {
   const source = actualName(promise?.source);
   const billIssuer = actualName(issuer);
   // Rehydrate routing from saved promise facts, never from the bill's display name.

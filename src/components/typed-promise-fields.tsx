@@ -1,0 +1,19 @@
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { TypedDetails } from "@/lib/typed-promise";
+
+export function TypedPromiseFields({ details, onChange, disabled, lines }: { details: TypedDetails; onChange: (value: TypedDetails) => void; disabled: boolean; lines: { id: string; description: string | null; type: string | null }[] }) {
+  return <div className="mt-4 space-y-4 border-y border-border py-4">
+    <div className="grid gap-4 sm:grid-cols-2">
+      <div className="space-y-2"><Label htmlFor="typed-kind">Promise type</Label><select id="typed-kind" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={details.kind} disabled={disabled} onChange={e => onChange({ ...details, kind: e.target.value === "refund" ? "refund" : "price" })}><option value="price">Agreed price</option><option value="refund">Refund</option></select></div>
+      <div className="space-y-2"><Label htmlFor="typed-line">Matching bill charge</Label><select id="typed-line" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={details.line_id ?? ""} disabled={disabled} onChange={e => onChange({ ...details, line_id: e.target.value || null })}><option value="">Match automatically</option>{lines.filter(l => l.type === "charge").map(l => <option key={l.id} value={l.id}>{l.description}</option>)}</select></div>
+      {details.kind === "price" && <div className="space-y-2"><Label htmlFor="typed-inclusive">Tax included in promised amount</Label><select id="typed-inclusive" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={details.tax_inclusive == null ? "unknown" : String(details.tax_inclusive)} disabled={disabled} onChange={e => onChange({ ...details, tax_inclusive: e.target.value === "unknown" ? null : e.target.value === "true" })}><option value="unknown">Not stated</option><option value="true">Included</option><option value="false">Additional</option></select></div>}
+    </div>
+    {details.kind === "price" && details.taxes.map((tax, index) => <div key={index} className="grid gap-3 sm:grid-cols-3">
+      {([["label", "Tax / cess", "text"], ["rate", "Rate (%)", "number"], ["taxable_amount", "Taxable amount (if stated)", "number"]] as const).map(([key, label, type]) => <div key={key} className="space-y-2"><Label htmlFor={`tax-${index}-${key}`}>{label}</Label><Input id={`tax-${index}-${key}`} type={type} step="any" value={tax[key] ?? ""} disabled={disabled} onChange={e => onChange({ ...details, taxes: details.taxes.map((t, j) => j === index ? { ...t, [key]: key === "label" ? e.target.value : e.target.value === "" ? key === "rate" ? 0 : null : Number(e.target.value) } : t) })} /></div>)}
+      <Button variant="ghost" size="sm" disabled={disabled} onClick={() => onChange({ ...details, taxes: details.taxes.filter((_, j) => j !== index) })}>Remove tax</Button>
+    </div>)}
+    {details.kind === "price" && <Button variant="outline" size="sm" disabled={disabled || details.taxes.length >= 10} onClick={() => onChange({ ...details, taxes: [...details.taxes, { label: "Tax", rate: 0, taxable_amount: null }] })}>Add tax / cess</Button>}
+  </div>;
+}
