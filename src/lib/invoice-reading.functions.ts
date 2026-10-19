@@ -17,7 +17,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: z.infer<typeof partSchema>) => partSchema.parse(input))
   .handler(async ({ data, context }) => {
-    const step = data.part === "price_list" ? "Reading price list" : "Reading invoice page";
+    const step = data.part === "price_list" ? "Reading price list" : data.part === "refund_promise" ? "Reading refund promise" : "Reading bill pages";
     try {
       ownPath(data.file.path, context.userId);
       const { loadDocument } = await import("@/lib/extraction-storage.server");

@@ -7,7 +7,8 @@ export type ReadingBatch = { file: File; first: number; last: number; total: num
 export async function prepareDocument(file: File): Promise<ReadingBatch[]> {
   if (file.type !== "application/pdf") return [{ file, first: 1, last: 1, total: 1 }];
   pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
+  const task = pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) });
+  const pdf = await task.promise;
   const batches: ReadingBatch[] = [];
   let texts: string[] = [];
   let first = 1;
@@ -43,5 +44,5 @@ export async function prepareDocument(file: File): Promise<ReadingBatch[]> {
     flush();
     if (!batches.length) throw new Error("This PDF has no pages.");
     return batches;
-  } finally { await pdf.destroy(); }
+  } finally { await task.destroy(); }
 }
