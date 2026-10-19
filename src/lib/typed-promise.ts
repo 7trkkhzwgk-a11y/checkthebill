@@ -9,6 +9,8 @@ export const typedDetailsSchema = z.object({
   taxes: z.array(z.object({ label: z.string().max(100), rate: z.number().finite().min(0).max(100), taxable_amount: z.number().finite().nonnegative().nullable() })).max(10),
   line_id: z.string().uuid().nullable().optional(),
   bill_amount_includes_tax: z.boolean().nullable().optional(),
+  read_failed: z.boolean().optional(),
+  promise_note: z.string().max(4000).nullable().optional(),
 });
 export type TypedDetails = z.infer<typeof typedDetailsSchema>;
 export type TaxCheck = { label: string; rate: number; taxable_amount: string; expected: string; billed: string | null; difference: string | null };

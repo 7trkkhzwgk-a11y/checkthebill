@@ -7,7 +7,7 @@ import { isDandyDocument, priceListSectionCounts } from "@/lib/dandy";
 import { z } from "zod";
 
 const documentSchema = z.object({ path: z.string().min(1), name: z.string(), mime: z.enum(["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain"]) });
-const partSchema = z.object({ file: documentSchema, sourcePath: z.string().optional(), readingId: z.string().uuid(), part: z.enum(["invoice", "price_list", "bill", "refund_promise"]), previousOrder: z.string().nullable().optional() });
+const partSchema = z.object({ file: documentSchema, sourcePath: z.string().optional(), readingId: z.string().uuid(), part: z.enum(["invoice", "price_list", "bill", "refund_promise"]), previousOrder: z.string().nullable().optional(), userNote: z.string().trim().max(4000).optional() });
 const CACHE_VERSION = "code-v2-sections";
 
 function ownPath(path: string, userId: string) {
@@ -45,7 +45,9 @@ export const readInvoicePart = createServerFn({ method: "POST" })
           output = maskedExtraction(data.part === "invoice" ? parseDandyInvoice(codeText) : parseDandyPriceList(codeText));
           readBy = "code";
         } else {
-          output = maskedExtraction(await extractInvoicePart(file, data.part, data.previousOrder ?? null, usageSink(context.supabase, context.userId, data.part, { readingId: data.readingId })));
+          const { maskSensitive } = await import("@/lib/mask");
+          const note = data.part === "refund_promise" || data.part === "price_list" ? maskSensitive(data.userNote) ?? undefined : undefined;
+          output = maskedExtraction(await extractInvoicePart(file, data.part, data.previousOrder ?? null, usageSink(context.supabase, context.userId, data.part, { readingId: data.readingId }), note));
         }
         if (data.part === "price_list") {
           const { error } = await context.supabase.from("price_list_cache").upsert({ user_id: context.userId, content_hash: `${CACHE_VERSION}-${hash}`, extraction: JSON.parse(JSON.stringify(output)), file_link: data.sourcePath ?? data.file.path }, { onConflict: "user_id,content_hash" });
@@ -62,7 +64,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
     }
   });
 
-const finishSchema = z.object({ bill: documentSchema, promise: documentSchema.optional(), typedPromise: z.string().trim().min(1).max(4000).optional(), readingId: z.string().uuid(), billType: z.enum(["refund", "lab_invoice"]), pages: z.array(z.string()).min(1), priceList: z.array(z.string()) }).refine(data => data.typedPromise ? !data.promise && data.priceList.length === 0 : !!data.promise && data.priceList.length > 0, "Choose a promise document or typed promise.");
+const finishSchema = z.object({ bill: documentSchema, promise: documentSchema.optional(), typedPromise: z.string().trim().min(1).max(4000).optional(), readingId: z.string().uuid(), billType: z.enum(["refund", "lab_invoice"]), pages: z.array(z.string()).min(1), priceList: z.array(z.string()) }).refine(data => data.promise ? data.priceList.length > 0 : !!data.typedPromise && data.priceList.length === 0, "What were you promised? Upload a screenshot or type it in one line.");
 export const finishInvoiceReading = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: z.infer<typeof finishSchema>) => finishSchema.parse(input))
@@ -81,12 +83,14 @@ export const finishInvoiceReading = createServerFn({ method: "POST" })
       const promises = [];
       for (const path of data.priceList) promises.push(await read(path));
       let typed;
+      let typedRead: Awaited<ReturnType<typeof import("@/lib/typed-promise.server").readTypedPromise>> = null;
       if (data.typedPromise) {
         step = "Reading the promise you entered";
-        const { extractTypedPromise } = await import("@/lib/typed-promise.server");
+        const { readTypedPromise, typedExtraction } = await import("@/lib/typed-promise.server");
         const { usageSink } = await import("@/lib/ai/usage.server");
-        typed = await extractTypedPromise(data.typedPromise, usageSink(context.supabase, context.userId, "typed_promise", { readingId: data.readingId }));
-        promises.push(typed.extraction);
+        // Never throws: a failed reading becomes a plain promise note for the user to fill in.
+        typedRead = await readTypedPromise(data.typedPromise, usageSink(context.supabase, context.userId, "typed_promise", { readingId: data.readingId }));
+        if (!data.promise) { typed = typedExtraction(typedRead, data.typedPromise); promises.push(typed.extraction); }
       }
       const firstPromise = promises[0];
       if (!firstPromise) throw new Error("Promise reading is missing.");
@@ -94,6 +98,15 @@ export const finishInvoiceReading = createServerFn({ method: "POST" })
       const combined = combineInvoicePages(pages, promise);
       if ((typed && typed.details.kind === "refund") || (!typed && data.billType === "refund")) { combined.promise_kind = "refund"; combined.refund = promises.find((p) => p.refund)?.refund ?? null; combined.agreed_items = []; }
       else if (typed) combined.promise_kind = "contract";
+      if (data.promise && data.typedPromise) {
+        // Document and typed text were read separately; typed values win and both are shown on review.
+        const { mergeTypedIntoRow } = await import("@/lib/promise-merge");
+        const { maskSensitive } = await import("@/lib/mask");
+        const note = maskSensitive(data.typedPromise) ?? "";
+        const fields = typedRead ? { item: typedRead.item, amount: typedRead.amount, date: typedRead.date, who_promised: typedRead.who_promised } : null;
+        if (combined.refund) { const merged = mergeTypedIntoRow(combined.refund, combined.source, fields, note); combined.refund = merged.row; combined.source = merged.source; }
+        else if (combined.agreed_items[0]) { const first = combined.agreed_items[0]; combined.agreed_items[0] = { ...first, notes: [first.notes, typedRead ? `Your note: ${note}` : `Promise note (not read automatically): ${note}`].filter(Boolean).join(" · ") }; }
+      }
       step = "Saving invoice check";
       const { saveExtraction } = await import("@/lib/extraction-storage.server");
       const saved = await saveExtraction(context.supabase, context.userId, data.bill.path, data.promise?.path ?? null, data.billType, combined, typed?.details);
