@@ -89,6 +89,12 @@ function CheckPage() {
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
+  const isPriceList = proms.length > 0 && proms.every((p) => p.promise_kind === "price_list" || p.promise_kind === "contract");
+  const suggestedMatches = isPriceList && !confirmed
+    ? matchInvoiceItems(lines as ReviewedLine[], proms as unknown as ReviewedPromise[])
+    : [];
+  const unconfirmedLow = suggestedMatches.filter((m) => m.promise_id && m.confidence < 0.85 && !matchOverrides[m.line_id]);
+
   const th = "px-2 py-2 text-left font-mono text-[10px] uppercase tracking-wider text-muted-foreground";
   return (
     <main className="mx-auto max-w-5xl px-4 py-10">
