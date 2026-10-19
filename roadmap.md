@@ -1,3 +1,7 @@
+# Fixed invoice aliases
+- [ ] Apply exact aliases before fuzzy matching, preserving quantities, included and staged rules.
+- [ ] Verify dispute drafts exclude all items except review/overcharged; run tests and signed-in results check.
+
 # Groq migration
 - [x] Move all document reading, drafts and chat to server-only Groq with requested models.
 - [x] Read PDF text in code, batch text pages, render scans locally, and persist reusable price lists.
