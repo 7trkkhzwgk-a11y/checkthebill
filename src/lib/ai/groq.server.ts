@@ -6,10 +6,13 @@ export type UsageSink = (tokens: number, model: string) => Promise<void>;
 export async function groqCompletion(apiKey: string, model: string, instructions: string, content: string | GroqPart[], json = false, usage?: UsageSink) {
   if (!apiKey) throw new Error("Groq is not configured. The app owner needs to add GROQ_API_KEY securely.");
   for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    let response: Response;
+    try { response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: instructions }, { role: "user", content }], ...(json ? { response_format: { type: "json_object" } } : {}) }),
-    });
+    }); } catch {
+      throw new Error("Couldn't connect to Groq. Check the GROQ_API_KEY in the secure secret form and try again.");
+    }
     if (response.status === 429) {
       await response.body?.cancel();
       if (attempt === GROQ_MAX_RETRIES) throw new Error("Busy – try again in a minute");
