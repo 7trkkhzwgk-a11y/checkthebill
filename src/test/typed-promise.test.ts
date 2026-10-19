@@ -3,7 +3,7 @@ import { compareConfirmed, type ReviewedLine, type ReviewedPromise } from "@/lib
 import { typedTaxMath, typedPromiseDraft, type TypedDetails } from "@/lib/typed-promise";
 import { presentFinding } from "@/lib/message-format";
 
-const details: TypedDetails = { kind: "price", tax_inclusive: false, taxes: [{ label: "GST", rate: 18, taxable_amount: null }] };
+const details: TypedDetails = { kind: "price", tax_inclusive: false, bill_amount_includes_tax: false, taxes: [{ label: "GST", rate: 18, taxable_amount: null }] };
 const line: ReviewedLine = { id: "11111111-1111-4111-8111-111111111111", description: "Plan", amount: 499, type: "charge", tax_amount: 90, date: null, reference_no: null, bank_ref: null };
 const promise: ReviewedPromise = { id: "22222222-2222-4222-8222-222222222222", item: "Plan", promised_amount: 499, original_charge: null, promised_on: null, reference_no: null, transaction_id: null, bank_ref: "", status_text: null, source: "Example Telecom", promise_kind: "contract", typed_details: details };
 describe("typed promises", () => {
@@ -18,6 +18,12 @@ describe("typed promises", () => {
   });
   it("keeps correctly taxed bills clear", () => {
     expect(compareConfirmed([{ ...line, tax_amount: 89.82 }], [promise], "2026-10-19").status).toBe("clear");
+  });
+  it("does not add tax twice to an inclusive billed amount", () => {
+    expect(compareConfirmed([{ ...line, amount: 499, tax_amount: 76.12 }], [{ ...promise, typed_details: { ...details, tax_inclusive: true, bill_amount_includes_tax: true } }], "2026-10-19").findings[0]).toMatchObject({ charged: "499.00", promised: "499.00", flagged: false });
+  });
+  it("requires a billed total or confirmed bill tax basis", () => {
+    expect(compareConfirmed([line], [{ ...promise, typed_details: { ...details, bill_amount_includes_tax: null } }], "2026-10-19").status).toBe("incomplete");
   });
   it("reports missing tax as incomplete rather than verified", () => {
     expect(compareConfirmed([{ ...line, tax_amount: null }], [promise], "2026-10-19").status).toBe("incomplete");

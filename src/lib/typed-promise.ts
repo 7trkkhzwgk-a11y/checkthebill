@@ -8,6 +8,7 @@ export const typedDetailsSchema = z.object({
   tax_inclusive: z.boolean().nullable(),
   taxes: z.array(z.object({ label: z.string().max(100), rate: z.number().finite().min(0).max(100), taxable_amount: z.number().finite().nonnegative().nullable() })).max(10),
   line_id: z.string().uuid().nullable().optional(),
+  bill_amount_includes_tax: z.boolean().nullable().optional(),
 });
 export type TypedDetails = z.infer<typeof typedDetailsSchema>;
 export type TaxCheck = { label: string; rate: number; taxable_amount: string; expected: string; billed: string | null; difference: string | null };
@@ -59,7 +60,8 @@ export function compareTypedPromises(lines: ReviewedLine[], promises: ReviewedPr
       });
       for (const tax of f.tax_checks) if (tax.billed == null) issues.push(`The billed ${tax.label} amount is missing; enter it on the matching bill line or check the separate tax transaction.`);
       const taxTotal = f.tax_checks.reduce((sum, tax) => sum.plus(tax.billed ?? 0), new Decimal(0));
-      const charged = line.total_amount != null ? new Decimal(line.total_amount) : line.tax_amount != null || f.tax_checks.some(tax => tax.billed != null) ? new Decimal(line.amount).plus(taxTotal) : new Decimal(line.amount);
+      if (details.taxes.length && line.total_amount == null && details.bill_amount_includes_tax == null) { f.issue = "Enter the billed total or confirm whether the bill amount includes tax."; issues.push(f.issue); }
+      const charged = line.total_amount != null ? new Decimal(line.total_amount) : details.bill_amount_includes_tax ? new Decimal(line.amount) : new Decimal(line.amount).plus(taxTotal);
       f.charged = charged.toFixed(2);
       f.overcharge = charged.minus(maths.total).toFixed(2);
       f.flagged = !f.issue && (new Decimal(f.overcharge).gt(0) || f.tax_checks.some(tax => tax.difference != null && !new Decimal(tax.difference).isZero()));
