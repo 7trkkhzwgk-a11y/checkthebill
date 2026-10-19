@@ -81,7 +81,9 @@ export const getCheckResult = createServerFn({ method: "POST" })
       if (saveError) throw new Error("Couldn't save the updated lab summary.");
     }
     if (comparison) comparison.findings = comparison.findings.map((f) => presentFinding(f, p.data?.find((r) => r.id === f.promise_id), b.data.issuer, b.data.currency));
-    return { bill: { ...b.data, comparison_result: comparison }, lines: l.data ?? [], messages: messages.data ?? [] };
+    const usage = await supabase.from("ai_usage").select("tokens").eq("bill_id", data.billId).eq("user_id", userId);
+    if (usage.error) throw new Error("Couldn't read AI usage.");
+    return { aiTokens: (usage.data ?? []).reduce((n, row) => n + row.tokens, 0), bill: { ...b.data, comparison_result: comparison }, lines: l.data ?? [], messages: messages.data ?? [] };
   });
 
 export const generateCheckDrafts = createServerFn({ method: "POST" })
@@ -117,7 +119,8 @@ export const generateCheckDrafts = createServerFn({ method: "POST" })
       if (existing.error) throw new Error("Couldn't read the saved message.");
       const saved = existing.data?.[0];
       if (saved && (saved.sent || saved.declined_at || saved.final_text !== null || saved.draft_version === DRAFT_VERSION)) continue;
-      const draft_text = await writeDraft(f);
+      const { usageSink } = await import("@/lib/ai/usage.server");
+      const draft_text = await writeDraft(f, usageSink(supabase, userId, "draft", { billId: data.billId }));
       const row = { sent_to: f.contact_name ?? (f.recipient === "BANK" ? "your bank" : "the billing company"), draft_text, draft_version: DRAFT_VERSION };
       const { error: saveError } = saved
         ? await supabase.from("messages").update(row).eq("id", saved.id).eq("user_id", userId).eq("sent", false).is("final_text", null).is("declined_at", null)
@@ -139,7 +142,8 @@ export const askCheckQuestion = createServerFn({ method: "POST" })
     if (promises.error) throw new Error("Couldn't load the check details.");
     comparison.findings = comparison.findings.map((f) => presentFinding(f, promises.data?.find((p) => p.id === f.promise_id), bill.issuer, bill.currency));
     const { answerQuestion } = await import("@/lib/ask.server");
-    const answer = await answerQuestion(comparison, bill.currency, data.question);
+    const { usageSink } = await import("@/lib/ai/usage.server");
+    const answer = await answerQuestion(comparison, bill.currency, data.question, usageSink(supabase, userId, "chat", { billId: data.billId }));
     return { answer };
   });
 
