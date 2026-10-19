@@ -11,6 +11,7 @@ export async function loadDocument(client: Client, file: StoredDocument): Promis
   const { data: blob, error } = await client.storage.from("documents").download(file.path);
   if (error || !blob) throw new Error("Couldn't read uploaded file.");
   validateDocumentSize(blob.size);
+  if (file.mime === "text/plain") return { name: file.name, mime: file.mime, text: await blob.text() };
   const bytes = new Uint8Array(await blob.arrayBuffer());
   // Chunked encoding avoids building a giant character-by-character string.
   const parts: string[] = [];

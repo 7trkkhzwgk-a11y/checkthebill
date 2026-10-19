@@ -3,7 +3,6 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Upload, FileCheck2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { runExtraction } from "@/lib/checks.functions";
 import { Button } from "@/components/ui/button";
 import { extractionErrorMessage, validateDocumentSize } from "@/lib/extraction-errors";
 import { readInvoicePart, finishInvoiceReading } from "@/lib/invoice-reading.functions";
@@ -42,7 +41,6 @@ function Drop({ label, hint, file, onFile }: { label: string; hint: string; file
 function NewCheck() {
   const navigate = useNavigate();
   const { user } = Route.useRouteContext();
-  const extract = useServerFn(runExtraction);
   const readPart = useServerFn(readInvoicePart);
   const finishReading = useServerFn(finishInvoiceReading);
   const [bill, setBill] = useState<File | null>(null);
@@ -51,9 +49,9 @@ function NewCheck() {
   const [billType, setBillType] = useState<"refund" | "lab_invoice">("refund");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function upload(f: File, kind: string): Promise<{ path: string; name: string; mime: "application/pdf" | "image/png" | "image/jpeg" | "image/webp" }> {
+  async function upload(f: File, kind: string): Promise<{ path: string; name: string; mime: "application/pdf" | "image/png" | "image/jpeg" | "image/webp" | "text/plain" }> {
     const mime = f.type;
-    if (mime !== "application/pdf" && mime !== "image/png" && mime !== "image/jpeg" && mime !== "image/webp") throw new Error("Unsupported file type.");
+    if (mime !== "application/pdf" && mime !== "image/png" && mime !== "image/jpeg" && mime !== "image/webp" && mime !== "text/plain") throw new Error("Unsupported file type.");
     const ext = f.name.split(".").pop() ?? "bin";
     const path = `${user.id}/${crypto.randomUUID()}-${kind}.${ext}`;
     const { error } = await supabase.storage.from("documents").upload(path, f, { contentType: f.type });
@@ -71,46 +69,45 @@ function NewCheck() {
       step = "Uploading files";
       setBusy("Uploading privately…");
       const [b, p] = await Promise.all([upload(bill, "bill"), upload(promise, "promise")]);
-      if (billType === "lab_invoice") {
-        step = "Preparing invoice pages";
-        setBusy("Preparing invoice pages…");
-        const { splitInvoicePdf } = await import("@/lib/pdf-pages");
-        const files = await splitInvoicePdf(bill);
-        step = "Reading price list";
-        setBusy("Reading price list…");
-        const priceList = await readPart({ data: { file: p, part: "price_list" } });
-        if (!priceList.ok) throw new Error(priceList.error);
-        const pages: string[] = [];
-        const uploadedPages: string[] = [];
-        let previousOrder: string | null = null;
-        try {
-          for (const [index, file] of files.entries()) {
-            step = `Reading page ${index + 1} of ${files.length}`;
-            setBusy(`${step}…`);
-            const page = files.length === 1 ? b : await upload(file, `page-${index + 1}`);
-            if (page.path !== b.path) uploadedPages.push(page.path);
-            const result = await readPart({ data: { file: page, part: "invoice", previousOrder } });
-            if (!result.ok) throw new Error(result.error);
-            pages.push(result.cachePath);
-            previousOrder = result.lastOrder ?? previousOrder;
-          }
-          step = "Combining and saving invoice";
-          setBusy("Combining and saving invoice…");
-          const result = await finishReading({ data: { bill: b, promise: p, pages, priceList: priceList.cachePath } });
+      const readingId = crypto.randomUUID();
+      step = "Preparing document pages";
+      setBusy("Preparing document pages…");
+      const { prepareDocument } = await import("@/lib/document-pages");
+      const pages: string[] = [];
+      const pricePaths: string[] = [];
+      const temporary: string[] = [];
+      try {
+        const promiseBatches = await prepareDocument(promise);
+        for (const batch of promiseBatches) {
+          step = `Reading promise page ${batch.first} of ${batch.total}`;
+          setBusy(`${step}…`);
+          const file = await upload(batch.file, "promise-batch"); temporary.push(file.path);
+          const result = await readPart({ data: { file, part: billType === "lab_invoice" ? "price_list" : "refund_promise", readingId } });
           if (!result.ok) throw new Error(result.error);
-          await navigate({ to: "/check/$billId", params: { billId: result.billId } });
-          return;
-        } finally {
-          if (uploadedPages.length || pages.length) await supabase.storage.from("documents").remove([...uploadedPages, ...pages]);
+          pricePaths.push(result.cachePath);
         }
+        let previousOrder: string | null = null;
+        const invoiceBatches = await prepareDocument(bill);
+        for (const batch of invoiceBatches) {
+          step = `Reading page ${batch.first} of ${batch.total}`;
+          setBusy(`${step}…`);
+          const file = await upload(batch.file, "bill-batch"); temporary.push(file.path);
+          const result = await readPart({ data: { file, part: billType === "lab_invoice" ? "invoice" : "bill", previousOrder, readingId } });
+          if (!result.ok) throw new Error(result.error);
+          pages.push(result.cachePath);
+          previousOrder = result.lastOrder ?? previousOrder;
+        }
+        step = "Combining and saving check";
+        setBusy("Combining and saving check…");
+        const result = await finishReading({ data: { bill: b, promise: p, pages, priceList: pricePaths, billType, readingId } });
+        if (!result.ok) throw new Error(result.error);
+        await navigate({ to: "/check/$billId", params: { billId: result.billId } });
+      } finally {
+        await supabase.storage.from("documents").remove([...temporary, ...pages, ...pricePaths]);
       }
-      step = "Reading bill and refund promise";
-      setBusy("Reading every line…");
-      const { billId } = await extract({ data: { bill: b, promise: p, billType } });
-      navigate({ to: "/check/$billId", params: { billId } });
     } catch (e) {
       const message = extractionErrorMessage(e);
-      setErrorMessage(billType === "lab_invoice" ? readingStepError(step, message) : message);
+      setErrorMessage(message.includes("Busy – try again in a minute") ? "Busy – try again in a minute" : readingStepError(step, message));
       setBusy(null);
     }
   }
