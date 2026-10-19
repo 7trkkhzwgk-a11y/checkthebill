@@ -53,3 +53,10 @@
 - [x] Save one short billing-team message covering all unmatched review items.
 - [x] Test the rules: 80 tests passed.
 - [x] Verify the signed-in result and saved billing-team message, including exact items/tax/credits/total reconciliation.
+
+# Code-only document reading
+- [x] Detect Dandy lab invoices and price lists and parse item, credit and price rows in code — no AI call, no tokens.
+- [x] Combine all text pages before parsing so a line wrapped across a page break is never lost.
+- [x] Cache the code-read price list privately and reuse it; results show "Read by code – 0 AI tokens".
+- [x] Test the parser rules: 110 tests passed.
+- [x] Verify the signed-in ten-page invoice end to end: 120 lines, items/tax/credits/total reconciliation ✓, buckets correct, 0 AI tokens; refund mode still reads via AI and records its tokens.
