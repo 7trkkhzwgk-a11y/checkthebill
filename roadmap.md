@@ -1,8 +1,15 @@
+# Groq migration
+- [x] Move all document reading, drafts and chat to server-only Groq with requested models.
+- [x] Read PDF text in code, batch text pages, render scans locally, and persist reusable price lists.
+- [x] Add bounded rate-limit retries and per-check token usage on results; preserve deterministic rules.
+- [x] 94 tests pass; browser verified four-page text batches, scan images and clear missing-key state.
+- [ ] Verify real Groq extraction, cache reuse, drafts, chat and saved token totals, then publish — blocked until GROQ_API_KEY is added securely.
+
 # Published invoice reading
 - [x] Split lab invoice PDFs into single-page private uploads and sequential server requests with progress.
 - [x] Extract and privately cache price lists separately; combine masked pages before saving the check.
 - [x] Show step-specific failures; 90 tests pass and the saved ten-page invoice reads back with matching printed Orders subtotal.
-- [ ] Publish the update and check published invoice reading.
+- [x] Published update requested; published page reading verified through page 8, then stopped with the explicit insufficient-credit error on page 9. Preview completed all ten pages. Further live AI verification paused pending credit recovery or the requested Groq migration.
 
 # Message routing regression
 - [x] Correct refund recipients and exact single requests; keep vendor recipients separate.
