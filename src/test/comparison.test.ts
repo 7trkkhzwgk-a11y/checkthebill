@@ -103,7 +103,7 @@ describe("price-list matching and flags", () => {
   });
   it("warns when pre-tax items or tax do not add up to the printed invoice totals", () => {
     const promises = [priceList("Crown", 1000)];
-    const result = compareConfirmed([{ ...invoiceLine("Crown", 900), tax_amount: 50 }], promises, "2026-10-18", { orders_subtotal: 1000, sales_tax: 80 });
+    const result = compareConfirmed([{ ...invoiceLine("Crown", 900), tax_amount: 50, order_no: "ORD-1" }], promises, "2026-10-18", { orders_subtotal: 1000, sales_tax: 80 });
     expect(result.status).toBe("incomplete");
     expect(result.issues.some((i) => i.includes("Orders subtotal"))).toBe(true);
     expect(result.issues.some((i) => i.includes("Sales Tax"))).toBe(true);
