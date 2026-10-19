@@ -9,6 +9,24 @@ const HEADER = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+Order\s*#(\d{3}-\d{3}-\d{3})\b\
 const NOISE = /^(?:PAGE \d+ OF \d+|Invoice|Invoice #.*\bdue\b.*|.*powered by dandy.*|.*dandy assumes.*|\* ?Credit amount is tax inclusive.*|Date Description Doctor Price Sales Tax Total)$/i;
 const SQUASHED_NOISE = [/^invoice$/i, /^invoice#/i, /^page\d+of\d+$/i, /poweredbydandy/i, /dandyassumes/i, /^\*?creditamountistaxinclusive/i, /^datedescriptiondoctorpricesalestaxtotal$/i];
 const SECTION_TITLES = /^(?:\d+\.\s|Materials$|Add-ons and modifications$|Final Implant Restorations\*?$|OEM component surcharge.*$|Plan expiration$|Refinement$|Retainers$|Extra Retainers$|Turnaround time.*$|Steps$|Description$|Plans$|Requirements$|Price$|Type$|Material$|Option$|Included$)/i;
+const PRICE_SECTION = /^(?:Materials|Add-ons and modifications|Final Implant Restorations\*?|Implant surgery [—–-] .+|Partial Dentures [—–-] .+|Full Dentures [—–-] .+|Other removables [—–-] .+|TMJ Appliances|Sleep Apnea Appliances|Sleep Apnea Add-Ons)$/i;
+const SECTION_NOTE = /^Section: (.+?)(?:\n|$)/;
+
+export function priceListSectionCounts(rows: { item: string | null; notes?: string | null }[]) {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const section = row.notes?.match(SECTION_NOTE)?.[1] ?? "Other / unsectioned";
+    counts.set(section, (counts.get(section) ?? 0) + 1);
+  }
+  return [...counts].map(([section, count]) => ({ section, count }));
+}
+
+// Remove only the parser's own prefix, not meaningful words from an unprefixed contract row.
+export function priceListItemName(row: { item: string | null; notes?: string | null }) {
+  const section = row.notes?.match(SECTION_NOTE)?.[1];
+  const prefix = section ? `${section} – ` : "";
+  return prefix && row.item?.startsWith(prefix) ? row.item.slice(prefix.length) : row.item ?? "";
+}
 
 const isShortWord = (word: string) => /^[a-z]{1,2}$/i.test(word) || /^[\W\d]{1,2}$/.test(word);
 
@@ -200,32 +218,87 @@ const priceRow = (over: Partial<PriceRow>): PriceRow => ({
 export function parseDandyPriceList(text: string): Extraction {
   const out = emptyExtraction();
   const lines = text.split(/\r?\n/).map(readLine).filter((l) => l && !isNoise(l));
+  let chapter = "Other / unsectioned";
+  let section = chapter;
+  let pending = "";
+  const save = (name: string, amount: number | null, notes: string | null) => {
+    if (!name) return;
+    out.agreed_items.push(priceRow({ item: `${section} – ${name}`, promised_amount: amount, notes: `Section: ${section}${notes ? `\n${notes}` : ""}` }));
+  };
+  const alignerPlans = ["Dandy On-Demand", "Dandy 20", "Dandy Max"];
+  let alignerPlan = 0;
+  let alignerPrices = false;
+  let retainers = false;
+  let retainerPlan = 0;
   for (const raw of lines) {
-    if (SECTION_TITLES.test(raw) || raw.startsWith("*")) continue;
+    if (/Dandy.*(?:Pricing List|prices subject)|^Source:/i.test(raw)) continue;
+    const heading = raw.match(/^\d+\.\s+(.+)$/);
+    if (heading?.[1]) { chapter = heading[1]; section = chapter; pending = ""; continue; }
+    if (PRICE_SECTION.test(raw)) {
+      section = /^(Materials|Add-ons and modifications)$/i.test(raw) ? `${chapter} – ${raw}` : raw.replace(/\*+$/, "");
+      pending = ""; continue;
+    }
+    if (raw.startsWith("*")) { pending = ""; continue; }
+    // Clear aligners use three parallel plan columns rather than the item/price table.
+    if (/Clear Aligners/i.test(chapter)) {
+      if (/^Price\s+\$/i.test(raw)) { alignerPrices = true; pending = raw.replace(/^Price\s+/i, ""); continue; }
+      if (/^Plan expiration/i.test(raw)) { alignerPrices = false; pending = ""; continue; }
+      if (alignerPrices) {
+        pending = joinText(pending, raw);
+        if (alignerPlan === 0 && /aligner/i.test(raw)) { save(alignerPlans[0] ?? "On-Demand", null, `Not a fixed price (${pending})`); alignerPlan++; pending = ""; }
+        else if (/^Single arch:/i.test(raw)) { save(alignerPlans[alignerPlan] ?? "Plan", null, `Several printed prices (${pending})`); alignerPlan++; pending = ""; }
+        continue;
+      }
+      if (/^Extra Retainers\b/i.test(raw)) { retainers = true; pending = raw.replace(/^Extra Retainers\s*/i, ""); continue; }
+      if (/^Turnaround time/i.test(raw)) { retainers = false; pending = ""; }
+      if (retainers) {
+        pending = joinText(pending, raw);
+        if (/^Multiple/i.test(raw)) { save(`${alignerPlans[retainerPlan] ?? "Plan"} – Extra Retainers`, null, `Several printed prices (${pending})`); retainerPlan++; pending = ""; }
+      }
+      continue;
+    }
+    if (/^OEM component surcharge:/i.test(raw)) { const amount = moneyValues(raw)[0]; save("OEM component surcharge", amount?.value ?? null, "Per abutment"); continue; }
+    if (SECTION_TITLES.test(raw)) { pending = ""; continue; }
     const amounts = moneyValues(raw);
     const na = raw.match(/(?:^|\s)(N\/?A)(?=\s|$)/i);
-    if (!amounts.length && !na) continue;
+    if (!amounts.length && !na) {
+      // Preserve the first item line across wrapped requirements and standalone price lines.
+      if (!pending || /^(?:New Dentures & Overdentures|Dandy (?:Print|Treatment|Tooth|Tissue))/i.test(raw)) pending = raw;
+      else pending = joinText(pending, raw);
+      continue;
+    }
+    if (/^\+\s*\$/.test(raw)) {
+      const previous = out.agreed_items.at(-1);
+      if (previous) previous.notes = `${previous.notes}\nAdditional-site pricing: ${raw}`;
+      continue;
+    }
 
     // The item name stops where the price starts, or where "N/A" stands in place of a price.
     const first = amounts[0];
     const naAt = na ? (na.index ?? 0) + na[0].lastIndexOf("N") : raw.length;
     const cut = first ? first.start : naAt;
-    const name = raw.slice(0, cut).replace(/\s+/g, " ").trim().replace(/[:|]+$/, "").trim();
+    let name = joinText(pending, raw.slice(0, cut)).replace(/\s+/g, " ").trim().replace(/[:|]+$/, "").trim();
+    pending = "";
+    const requirements = name.match(/\s+Using the (reference denture|wax bite rim) workflow\b/i);
+    if (requirements) name = `${name.slice(0, requirements.index)} – ${/reference/i.test(requirements[1] ?? "") ? "reference" : "wax bite rim"} workflow`;
+    // N/A in the Requirements column does not mean the printed price is unavailable.
+    if (amounts.length && /^Full Dentures/i.test(section)) name = name.replace(/\s+N\/?A\b.*$/i, "").trim();
+    if (/^Implant surgery.*Options/i.test(section)) name = name.replace(/\*?(?:\s+(?:Surgical Guide Fabrication|Treatment Planning)).*$/i, "").replace(/\*$/, "").trim();
     if (!name || SECTION_TITLES.test(name)) continue;
 
     const tail = raw.slice(cut).replace(/\s+/g, " ").trim();
     const isRange = /\$\s?[\d,.]+\s?(?:-|–|—|to)\s?\$?\s?[\d,.]+/i.test(tail);
     const alloy = /\+\s*alloy/i.test(tail);
 
-    if (alloy) { out.agreed_items.push(priceRow({ item: name, promised_amount: first?.value ?? null, notes: tail || "+ Alloy" })); continue; }
-    if (isRange) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Price range ${tail}` })); continue; }
-    if (!amounts.length && na) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: "N/A – contact account manager" })); continue; }
-    if (na && /\bN\/?A\b/i.test(tail)) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Not a fixed price (${tail})` })); continue; }
-    if (amounts.length > 1) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Several printed prices (${tail})` })); continue; }
+    if (alloy) { save(name, first?.value ?? null, tail || "+ Alloy"); continue; }
+    if (isRange) { save(name, null, `Price range ${tail}`); continue; }
+    if (!amounts.length && na) { save(name, null, "N/A – contact account manager"); continue; }
+    if (na && /\bN\/?A\b/i.test(tail)) { save(name, null, `Not a fixed price (${tail})`); continue; }
+    if (amounts.length > 1) { save(name, null, `Several printed prices (${tail})`); continue; }
     if (!first) continue;
 
     const note = tail.replace(MONEY, "").replace(/\s+/g, " ").trim();
-    out.agreed_items.push(priceRow({ item: name, promised_amount: first.value, notes: note ? `${note} (as printed: ${tail})` : null }));
+    save(name, first.value, note ? `${note} (as printed: ${tail})` : null);
   }
   out.currency = text.includes("$") ? "USD" : null;
   out.source = "Dandy Lab — Master Pricing List";
