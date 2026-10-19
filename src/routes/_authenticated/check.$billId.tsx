@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { confirmCheck, generateCheckDrafts } from "@/lib/comparison.functions";
 import { matchInvoiceItems, groupInvoiceMatches, applyGroupMatch, reconcileInvoice, isComparablePromise, closestPriceListNames, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
 import { priceListSectionCounts } from "@/lib/dandy";
+import { typedDetailsSchema, type TypedDetails } from "@/lib/typed-promise";
+import { TypedPromiseFields } from "@/components/typed-promise-fields";
 
 import { formatCurrency } from "@/lib/message-format";
 
@@ -28,7 +30,7 @@ export const Route = createFileRoute("/_authenticated/check/$billId")({
 });
 
 type Line = { id: string; date: string | null; description: string | null; amount: number | null; type: string | null; reference_no: string | null; bank_ref: string | null; order_no: string | null; tax_amount: number | null; total_amount: number | null };
-type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null; pnr: string | null; promise_kind: string | null; notes: string | null };
+type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null; pnr: string | null; promise_kind: string | null; notes: string | null; typed_details?: TypedDetails | null };
 
 function Cell({ value, onChange, type = "text", disabled }: { value: string; onChange: (v: string) => void; type?: string; disabled: boolean }) {
   return <Input className="h-8 min-w-24 font-mono text-xs" type={type === "date" ? "text" : type} step={type === "number" ? "any" : undefined} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
@@ -56,7 +58,7 @@ function CheckPage() {
       const [b, l, p] = await Promise.all([
         supabase.from("bills").select("issuer, confirmed_at, bill_total,currency,orders_subtotal,bill_type").eq("id", billId).single(),
         supabase.from("line_items").select("id,date,description,amount,type,reference_no,bank_ref,order_no,tax_amount,total_amount").eq("bill_id", billId).order("date"),
-        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source,pnr,promise_kind,notes").eq("bill_id", billId),
+        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source,pnr,promise_kind,notes,typed_details").eq("bill_id", billId),
       ]);
       setIssuer(b.data?.issuer ?? null);
       setOrdersSubtotal(b.data?.orders_subtotal ?? null);
@@ -65,13 +67,13 @@ function CheckPage() {
       setCurrency(b.data?.currency ?? null);
       setConfirmed(!!b.data?.confirmed_at);
       setLines((l.data ?? []) as Line[]);
-      setProms((p.data ?? []) as Prom[]);
+      setProms((p.data ?? []).map(row => ({ ...row, typed_details: row.typed_details ? typedDetailsSchema.parse(row.typed_details) : null })));
       setLoading(false);
     })();
   }, [billId]);
 
   const setL = (i: number, k: keyof Line, v: string) =>
-    setLines((ls) => ls.map((x, j) => (j === i ? { ...x, [k]: k === "amount" ? (v === "" ? null : Number(v)) : v || null } : x)));
+    setLines((ls) => ls.map((x, j) => (j === i ? { ...x, [k]: ["amount", "tax_amount", "total_amount"].includes(k) ? (v === "" ? null : Number(v)) : v || null } : x)));
   const setP = (i: number, k: keyof Prom, v: string) =>
     setProms((ps) => ps.map((x, j) => (j === i ? { ...x, [k]: k === "promised_amount" || k === "original_charge" ? (v === "" ? null : Number(v)) : k === "bank_ref" ? v : v || null } : x)));
 
@@ -97,7 +99,8 @@ function CheckPage() {
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
-  const isPriceList = proms.length > 0 && proms.every((p) => p.promise_kind === "price_list" || p.promise_kind === "contract");
+  const isTyped = proms.some(p => p.typed_details);
+  const isPriceList = !isTyped && proms.length > 0 && proms.every((p) => p.promise_kind === "price_list" || p.promise_kind === "contract");
   const suggestedMatches = isPriceList && !confirmed
     ? matchInvoiceItems(lines as ReviewedLine[], proms as unknown as ReviewedPromise[])
     : [];
@@ -121,7 +124,7 @@ function CheckPage() {
       <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-card shadow-card">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-border">
-            {["Date", "Description", "Amount", "Type", "Reference", "Bank ref"].map((h) => <th key={h} className={th}>{h}</th>)}
+            {["Date", "Description", "Amount", "Type", "Reference", "Bank ref", ...(isTyped ? ["Billed tax", "Billed total"] : [])].map((h) => <th key={h} className={th}>{h}</th>)}
           </tr></thead>
           <tbody>
             {lines.length === 0 && <tr><td colSpan={6} className="p-4 text-muted-foreground">No lines found.</td></tr>}
@@ -137,6 +140,7 @@ function CheckPage() {
                 </td>
                 <td className="p-1"><Cell value={(billType === "lab_invoice" ? l.order_no ?? l.reference_no : l.reference_no) ?? ""} onChange={(v) => setL(i, billType === "lab_invoice" ? "order_no" : "reference_no", v)} disabled={confirmed} /></td>
                 <td className="p-1"><Cell value={l.bank_ref ?? ""} onChange={(v) => setL(i, "bank_ref", v)} disabled={confirmed} /></td>
+                {isTyped && <><td className="p-1"><Cell type="number" value={l.tax_amount?.toString() ?? ""} onChange={v => setL(i, "tax_amount", v)} disabled={confirmed} /></td><td className="p-1"><Cell type="number" value={l.total_amount?.toString() ?? ""} onChange={v => setL(i, "total_amount", v)} disabled={confirmed} /></td></>}
               </tr>
             ))}
           </tbody>
@@ -150,7 +154,8 @@ function CheckPage() {
         <Input id="bill-total" type="number" step="any" value={billTotal ?? ""} disabled={confirmed} onChange={(e) => setBillTotal(e.target.value === "" ? null : Number(e.target.value))} />
       </div>
 
-      <h2 className="mt-8 font-semibold">Promise</h2>
+      <h2 className="mt-8 font-semibold">{isTyped ? "Promise you entered (no document)" : "Promise"}</h2>
+      {proms.map((p, i) => p.typed_details ? <TypedPromiseFields key={p.id} details={p.typed_details} lines={lines} disabled={confirmed} onChange={details => setProms(rows => rows.map((row, j) => j === i ? { ...row, typed_details: details } : row))} /> : null)}
       {isPriceList && <section className="mt-3 border-y border-border py-4" aria-label="Saved price-list sections"><h3 className="text-sm font-semibold">Price list · {proms.length} rows saved</h3><dl className="mt-3 grid gap-2 sm:grid-cols-2">{priceListSectionCounts(proms).map(({ section, count }) => <div key={section} className="flex min-w-0 justify-between gap-3 text-xs"><dt className="break-words text-muted-foreground">{section}</dt><dd className="shrink-0 font-mono">{count} rows</dd></div>)}</dl></section>}
       {isPriceList ? (
         <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-card shadow-card">

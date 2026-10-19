@@ -3,6 +3,7 @@ import type { Database } from "@/integrations/supabase/types";
 import { normalizeExtraction, type Extraction } from "@/lib/extraction";
 import { validateDocumentSize } from "@/lib/extraction-errors";
 import type { InFile } from "@/lib/extract.server";
+import type { TypedDetails } from "@/lib/typed-promise";
 
 type Client = SupabaseClient<Database>;
 export type StoredDocument = { path: string; name: string; mime: string };
@@ -19,7 +20,7 @@ export async function loadDocument(client: Client, file: StoredDocument): Promis
   return { name: file.name, mime: file.mime, base64: parts.join("") };
 }
 
-export async function saveExtraction(client: Client, userId: string, billPath: string, promisePath: string, billType: "refund" | "lab_invoice", input: Extraction) {
+export async function saveExtraction(client: Client, userId: string, billPath: string, promisePath: string | null, billType: "refund" | "lab_invoice", input: Extraction, typedDetails?: TypedDetails) {
   const ex = normalizeExtraction(input);
   const { data: bill, error: billErr } = await client.from("bills").insert({
     user_id: userId, issuer: ex.issuer, currency: ex.currency, bill_total: ex.bill_total,
@@ -39,6 +40,7 @@ export async function saveExtraction(client: Client, userId: string, billPath: s
       const { error } = await client.from("promises").insert(ex.promise_rows.map((l) => ({
         user_id: userId, bill_id: bill.id, source: ex.source, ...l,
         promise_kind: ex.promise_kind, file_link: promisePath,
+        ...(typedDetails ? { typed_details: typedDetails } : {}),
       })));
       if (error) throw new Error("Couldn't save the price list.");
     }

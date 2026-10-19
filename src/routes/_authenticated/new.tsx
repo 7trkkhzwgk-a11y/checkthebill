@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Upload, FileCheck2, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { extractionErrorMessage, validateDocumentSize } from "@/lib/extraction-errors";
 import { readInvoicePart, finishInvoiceReading } from "@/lib/invoice-reading.functions";
 import { readingStepError } from "@/lib/invoice-extraction";
@@ -52,6 +53,8 @@ function NewCheck() {
   const finishReading = useServerFn(finishInvoiceReading);
   const [bill, setBill] = useState<File | null>(null);
   const [promise, setPromise] = useState<File | null>(null);
+  const [promiseMode, setPromiseMode] = useState<"document" | "typed">("document");
+  const [typedPromise, setTypedPromise] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [billType, setBillType] = useState<"refund" | "lab_invoice">("refund");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -67,15 +70,15 @@ function NewCheck() {
   }
 
   async function start() {
-    if (!bill || !promise) return;
+    if (!bill || (promiseMode === "document" ? !promise : !typedPromise.trim())) return;
     setErrorMessage(null);
     let step = "Checking files";
     try {
       validateDocumentSize(bill.size);
-      validateDocumentSize(promise.size);
+      if (promiseMode === "document" && promise) validateDocumentSize(promise.size);
       step = "Uploading files";
       setBusy("Uploading privately…");
-      const [b, p] = await Promise.all([upload(bill, "bill"), upload(promise, "promise")]);
+      const [b, p] = await Promise.all([upload(bill, "bill"), promiseMode === "document" && promise ? upload(promise, "promise") : Promise.resolve(undefined)]);
       const readingId = crypto.randomUUID();
       step = "Preparing document pages";
       setBusy("Preparing document pages…");
@@ -84,9 +87,9 @@ function NewCheck() {
       const pricePaths: string[] = [];
       const temporary: string[] = [];
       try {
-        const promiseBatches = await prepareDocument(promise);
+        const promiseBatches = promiseMode === "document" && promise ? await prepareDocument(promise) : [];
         const promiseText = billType === "lab_invoice" ? await combinedText(promiseBatches) : null;
-        if (promiseText && isDandyDocument(promiseText)) {
+        if (p && promiseText && isDandyDocument(promiseText)) {
           step = "Reading price list with code";
           setBusy("Reading price list with code…");
           const file = await upload(new File([promiseText], "price-list.txt", { type: "text/plain" }), "promise-text"); temporary.push(file.path);
@@ -98,7 +101,7 @@ function NewCheck() {
             step = `Reading promise page ${batch.first} of ${batch.total}`;
             setBusy(`${step}…`);
             const file = await upload(batch.file, "promise-batch"); temporary.push(file.path);
-            const result = await readPart({ data: { file, sourcePath: p.path, part: billType === "lab_invoice" ? "price_list" : "refund_promise", readingId } });
+            const result = await readPart({ data: { file, sourcePath: p?.path, part: billType === "lab_invoice" ? "price_list" : "refund_promise", readingId } });
             if (!result.ok) throw new Error(result.error);
             pricePaths.push(result.cachePath);
           }
@@ -125,8 +128,8 @@ function NewCheck() {
           }
         }
         step = "Combining and saving check";
-        setBusy("Combining and saving check…");
-        const result = await finishReading({ data: { bill: b, promise: p, pages, priceList: pricePaths, billType, readingId } });
+        setBusy(promiseMode === "typed" ? "Reading the promise you entered…" : "Combining and saving check…");
+        const result = await finishReading({ data: { bill: b, ...(p ? { promise: p } : { typedPromise }), pages, priceList: pricePaths, billType, readingId } });
         if (!result.ok) throw new Error(result.error);
         await navigate({ to: "/check/$billId", params: { billId: result.billId } });
       } finally {
@@ -148,7 +151,7 @@ function NewCheck() {
         <legend className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">Bill type</legend>
         <div className="mt-2 flex gap-2" role="radiogroup" aria-label="Bill type">
           {([["refund", "Refund"], ["lab_invoice", "Lab/vendor invoice"]] as const).map(([value, label]) => (
-            <button
+            <Button
               key={value}
               type="button"
               role="radio"
@@ -158,16 +161,22 @@ function NewCheck() {
               className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${billType === value ? "border-accent bg-accent/10 text-foreground" : "border-input bg-card text-muted-foreground hover:border-accent"}`}
             >
               {label}
-            </button>
+            </Button>
           ))}
         </div>
       </fieldset>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         <Drop label="Bill" hint="Card statement or vendor invoice" file={bill} onFile={setBill} />
-        <Drop label="Promise" hint="Refund confirmation, contract or agreed price list" file={promise} onFile={setPromise} />
+        <section className="min-w-0 space-y-3" aria-label="Promise">
+          <h2 className="font-mono text-xs uppercase text-muted-foreground">Promise</h2>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Promise source">
+            {([["document", "Upload a document"], ["typed", "Type what you were promised"]] as const).map(([value, label]) => <Button key={value} type="button" variant={promiseMode === value ? "secondary" : "outline"} size="sm" role="radio" aria-checked={promiseMode === value} disabled={!!busy} className="h-auto whitespace-normal text-left" onClick={() => setPromiseMode(value)}>{label}</Button>)}
+          </div>
+          {promiseMode === "document" ? <Drop label="Promise document" hint="Refund confirmation, contract or agreed price list" file={promise} onFile={setPromise} /> : <Textarea aria-label="Type what you were promised" value={typedPromise} maxLength={4000} disabled={!!busy} onChange={e => setTypedPromise(e.target.value)} placeholder="Plan is ₹499/month incl. 18% GST; Refund of ₹7,180 promised on call; Agreed crown price $75" className="min-h-40" />}
+        </section>
       </div>
-      <Button variant="signal" size="lg" className="mt-8 w-full md:w-auto" disabled={!bill || !promise || !!busy} onClick={start}>
-        {busy ? (<><Loader2 className="h-4 w-4 animate-spin" /> {busy}</>) : "Read both files"}
+      <Button variant="signal" size="lg" className="mt-8 w-full md:w-auto" disabled={!bill || (promiseMode === "document" ? !promise : !typedPromise.trim()) || !!busy} onClick={start}>
+        {busy ? (<><Loader2 className="h-4 w-4 animate-spin" /> {busy}</>) : promiseMode === "typed" ? "Read bill and promise" : "Read both files"}
       </Button>
       {busy && <p role="status" aria-live="polite" className="mt-3 text-sm text-muted-foreground">{busy}</p>}
       {errorMessage && <p role="alert" className="mt-4 text-sm text-destructive">{errorMessage}</p>}

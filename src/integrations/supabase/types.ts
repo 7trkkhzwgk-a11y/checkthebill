@@ -253,6 +253,7 @@ export type Database = {
           source: string | null
           status_text: string | null
           transaction_id: string | null
+          typed_details: Json | null
           user_id: string
         }
         Insert: {
@@ -271,6 +272,7 @@ export type Database = {
           source?: string | null
           status_text?: string | null
           transaction_id?: string | null
+          typed_details?: Json | null
           user_id?: string
         }
         Update: {
@@ -289,6 +291,7 @@ export type Database = {
           source?: string | null
           status_text?: string | null
           transaction_id?: string | null
+          typed_details?: Json | null
           user_id?: string
         }
         Relationships: [
