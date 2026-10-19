@@ -125,7 +125,7 @@ describe("parseDandyPriceList", () => {
   });
 
   it("marks + Alloy, N/A, price ranges and multi-column rows as not comparable", () => {
-    for (const name of ["PFM - Noble - White", "Composite Stent", "Model", "Full Contour Zirconia"]) {
+    for (const name of ["PFM - Noble - White", "Composite Stent", "Model 1 per order", "Full Contour Zirconia"]) {
       const row = parsed.agreed_items.find((p) => p.item === name);
       expect(row, name).toBeTruthy();
       expect(isComparablePromise({ item: row?.item ?? null, promised_amount: row?.promised_amount ?? null, notes: row?.notes ?? null }), name).toBe(false);
