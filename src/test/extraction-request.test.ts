@@ -29,7 +29,7 @@ describe("complete extraction request", () => {
     expect(extractionOutputSchema.shape.refund.unwrap().shape.pnr.isNullable()).toBe(true);
   });
 
-  it("sends image data to the vision model and code-extracted PDF text to the text model, never raw PDFs", async () => {
+  it("sends image data and code-extracted PDF text to the same model, never raw PDFs", async () => {
     mock.completion.mockResolvedValue(JSON.stringify(complete));
     expect(await extractLines({ name: "bill.png", mime: "image/png", base64: "aW1hZ2U=" }, { name: "promise.txt", mime: "text/plain", text: "Synthetic contract text" })).toEqual(complete);
     const call = mock.completion.mock.calls[0];
@@ -39,7 +39,11 @@ describe("complete extraction request", () => {
     expect(call?.[3][3]).toEqual({ type: "text", text: "Synthetic contract text" });
     mock.completion.mockResolvedValue(JSON.stringify(complete));
     await extractLines({ name: "bill.txt", mime: "text/plain", text: "Synthetic statement text" }, { name: "promise.txt", mime: "text/plain", text: "Synthetic contract text" });
-    expect(mock.completion.mock.calls[1]?.[1]).toBe("openai/gpt-oss-120b");
+    expect(mock.completion.mock.calls[1]?.[1]).toBe("qwen/qwen3.8-27b");
+  });
+  it("maps a Groq tokens-per-minute refusal to a busy message, not a file-size message", () => {
+    expect(extractionErrorMessage(new Error("Request too large for model `openai/gpt-oss-120b` on tokens per minute (TPM): Limit 8000, Requested 11997"))).toBe("Busy – try again in a minute");
+    expect(extractionErrorMessage(new Error("File too large. Choose an image or PDF smaller than 20 MB."))).toBe("File too large. Choose an image or PDF smaller than 20 MB.");
   });
   it("does not hide exhausted rate limits behind JSON validation", async () => {
     mock.completion.mockRejectedValue(new Error("Busy – try again in a minute"));

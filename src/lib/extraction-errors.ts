@@ -21,6 +21,8 @@ export function extractionErrorMessage(error: unknown): string {
     }
     if (status === 429) return "Document reading is temporarily rate limited. Please wait a moment, then try again.";
     if (status === 402) return safeMessage ?? "Not enough AI credits to read these files. Add credits in Settings → Plans & credits, then try again.";
+    // Groq reports its tokens-per-minute cap as 413 "Request too large"; that is a rate limit, not an oversized file.
+    if (/tokens per minute|\btpm\b/i.test(entry.message ?? "")) return "Busy – try again in a minute";
     if (status === 413 || /file too large|payload too large|request too large|maximum.*(?:file|size)|file.*(?:size limit|too big)/i.test(entry.message ?? "")) return "File too large. Choose an image or PDF smaller than 20 MB.";
     if (status === 401) return "Document reading is not configured correctly. Please contact the app owner.";
     if (status === 403) return safeMessage ?? "Document reading is blocked by the AI service. Please contact the app owner to restore access.";

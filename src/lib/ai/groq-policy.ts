@@ -1,12 +1,8 @@
-// Models this account can reach: text-only batches use gpt-oss-120b; images (scans, screenshots) use qwen3.8-27b.
-export const TEXT_MODEL = "openai/gpt-oss-120b";
-export const VISION_MODEL = "qwen/qwen3.8-27b";
-// gpt-oss-120b defaults to a 3072-token answer budget, which truncates a full price list; both models accept these settings.
+// One model for every AI call: this key's gpt-oss-120b cap (8,000 tokens/minute) rejects a single 4-page invoice batch (11,997 tokens).
+export const GROQ_MODEL = "qwen/qwen3.8-27b";
+// A full price list needs more answer room than the default budget, which truncates the JSON.
 export const GROQ_MAX_TOKENS = 16000;
 export const GROQ_REASONING_EFFORT = "low";
-export function groqModelFor(content: { type: string }[]) {
-  return content.some((part) => part.type === "image_url") ? VISION_MODEL : TEXT_MODEL;
-}
 export const GROQ_MAX_RETRIES = 3;
 export function groqRetryDelay(retry: number, header: string | null) {
   const seconds = header == null ? NaN : Number(header);
