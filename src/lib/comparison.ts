@@ -45,6 +45,11 @@ export function isComparablePromise(p: Pick<ReviewedPromise, "item" | "promised_
   return true;
 }
 
+// Staged items (partial dentures or rows marked staged) bill across orders; they are never flagged.
+export function isStagedItem(p: Pick<ReviewedPromise, "item" | "notes">): boolean {
+  return /partial\s+denture|\bstaged\b/i.test(`${p.item ?? ""} ${p.notes ?? ""}`);
+}
+
 const STOPWORDS = new Set(["the", "a", "an", "of", "for", "and", "with", "per", "item", "each", "tooth", "teeth", "no", "type"]);
 const tokens = (text: string | null) => (text ?? "").toLocaleLowerCase().replace(/\(\s*x\s*\d+\s*\)/g, " ").split(/[^a-z0-9]+/).filter((t) => t && !STOPWORDS.has(t));
 
@@ -168,7 +173,9 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
         const agreedTotal = new Decimal(p.promised_amount).times(match?.quantity ?? 1);
         f.promised = agreedTotal.toFixed(2);
         f.overcharge = new Decimal(line.amount).minus(agreedTotal).toFixed(2);
-        if (new Decimal(f.overcharge).gt(0)) {
+        if (isStagedItem(p)) {
+          f.note = "Staged – check total when order completes.";
+        } else if (new Decimal(f.overcharge).gt(0)) {
           f.flagged = true; f.recipient = "VENDOR";
           f.flag_reason = `Charged ${f.charged} instead of the agreed ${f.promised}; overcharge ${f.overcharge}.`;
           f.contact_reason = "Contact the VENDOR because this invoice line is above its agreed price.";
