@@ -24,18 +24,18 @@ export function presentFinding(f: Finding, promise: Partial<ReviewedPromise> | u
   const billIssuer = actualName(issuer);
   // Rehydrate routing from saved promise facts, never from the bill's display name.
   const bank_ref = f.kind === "refund" ? promise?.bank_ref ?? f.bank_ref : f.bank_ref;
-  const recipient = f.kind === "refund" && f.flagged ? bank_ref?.trim() ? "BANK" : "MERCHANT" : f.recipient;
-  const contact_name = f.kind === "invoice" || recipient === "BANK" ? billIssuer : source;
+  const recipient = f.typed_promise ? f.flagged ? "VENDOR" : null : f.kind === "refund" && f.flagged ? bank_ref?.trim() ? "BANK" : "MERCHANT" : f.recipient;
+  const contact_name = f.typed_promise ? source ?? billIssuer : f.kind === "invoice" || recipient === "BANK" ? billIssuer : source;
   const name = contact_name ?? (recipient === "BANK" ? "your bank" : f.kind === "refund" ? "the merchant" : "the billing company");
   const pnr = promise?.pnr ?? f.pnr ?? promise?.item?.match(/\bPNR(?:\s*(?:no\.?|number|id))?\s*[:#-]?\s*([A-Z0-9-]+)/i)?.[1] ?? null;
   const detectedCurrency = currencyCode(currency) ?? f.currency ?? (/\bIRCTC\b/i.test(source ?? "") ? "INR" : null);
   const missing_amount = f.missing_amount ?? (f.kind === "refund" && f.promised !== null && f.credit_found !== null ? new Decimal(f.promised).minus(f.credit_found).toFixed(2) : null);
   const result = { ...f, recipient, bank_ref, currency: detectedCurrency, contact_name, item: promise?.item ?? f.item ?? null, pnr, missing_amount };
   const amount = (v: string | null) => formatCurrency(v, detectedCurrency);
-  result.flag_reason = !f.flagged ? null : f.kind === "refund"
+  result.flag_reason = !f.flagged ? null : f.typed_promise ? "The bill differs from the promise you entered. Ask the company to confirm." : f.kind === "refund"
     ? `Refund promised: ${amount(f.promised)}. Credit found: ${amount(f.credit_found)}. ${amount(f.missing_amount ?? new Decimal(f.promised ?? 0).minus(f.credit_found ?? 0).toFixed(2))} is still missing.`
     : `Charged ${amount(f.charged)} instead of the agreed ${amount(f.promised)}; overcharge ${amount(f.overcharge)}.`;
-  result.contact_reason = !recipient ? null : recipient === "MERCHANT"
+  result.contact_reason = !recipient ? null : f.typed_promise ? `Contact ${name} to confirm what you were told and resolve the discrepancy.` : recipient === "MERCHANT"
     ? `Contact ${name} first because no bank reference was provided. Ask for the bank reference number for this refund ID.`
     : recipient === "BANK" ? `Contact ${name} to trace and credit the missing refund using the available bank reference.`
     : `Contact ${name} because this invoice line is above its agreed price.`;
@@ -43,6 +43,7 @@ export function presentFinding(f: Finding, promise: Partial<ReviewedPromise> | u
 }
 
 export function messageRequest(f: Finding): string {
+  if (f.typed_promise) return "Please confirm what I was told and resolve this discrepancy.";
   if (f.kind === "invoice") return "Please correct this invoice overcharge.";
   return f.bank_ref?.trim()
     ? `Please trace and credit ${formatCurrency(f.missing_amount, f.currency)} using bank reference ${f.bank_ref.trim()}.`

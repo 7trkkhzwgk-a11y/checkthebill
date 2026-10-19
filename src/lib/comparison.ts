@@ -3,6 +3,7 @@ import { z } from "zod";
 import { toDate } from "@/lib/extraction";
 import { messageRequest } from "@/lib/message-format";
 import { priceListItemName } from "@/lib/dandy";
+import { compareTypedPromises, typedDetailsSchema, type TaxCheck } from "@/lib/typed-promise";
 
 export const reviewedLineSchema = z.object({
   id: z.string().uuid(), date: z.string().nullable(), description: z.string().max(2000).nullable(),
@@ -19,10 +20,12 @@ export const reviewedPromiseSchema = z.object({
   reference_no: z.string().max(500).nullable(), transaction_id: z.string().max(500).nullable(),
   bank_ref: z.string().max(500).nullable(), status_text: z.string().max(2000).nullable(), source: z.string().max(2000).nullable(),
   notes: z.string().max(2000).nullable().optional(),
+  typed_details: typedDetailsSchema.nullable().optional(),
 });
 export type ReviewedLine = z.infer<typeof reviewedLineSchema>;
 export type ReviewedPromise = z.infer<typeof reviewedPromiseSchema> & { promise_kind?: string | null };
 export type Finding = {
+  typed_promise?: boolean; tax_checks?: TaxCheck[];
   order_no?: string | null; invoice_item?: string | null; disposition?: "matched" | "included" | "not_comparable" | "no_contract" | "staged";
   currency?: string | null; contact_name?: string | null; item?: string | null; pnr?: string | null; missing_amount?: string | null;
   kind: "refund" | "invoice"; promise_id: string; line_id: string | null;
@@ -188,6 +191,7 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
 export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string, options?: { orders_subtotal?: number | null; sales_tax?: number | null; bill_total?: number | null; confirmed_matches?: Record<string, string> }): Comparison {
   const billTotals = { orders_subtotal: options?.orders_subtotal ?? null, sales_tax: options?.sales_tax ?? null };
   if (!toDate(today)) throw new Error("Invalid comparison date.");
+  if (promises.length && promises.every(p => p.typed_details)) return compareTypedPromises(lines, promises, today);
   const findings: Finding[] = [];
   const issues: string[] = [];
   const usedCredits = new Set<string>();

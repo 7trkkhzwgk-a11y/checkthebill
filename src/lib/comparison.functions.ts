@@ -7,6 +7,7 @@ import { toDate } from "@/lib/extraction";
 import type { Json } from "@/integrations/supabase/types";
 import { currencyCode, DRAFT_VERSION, presentFinding } from "@/lib/message-format";
 import { invoiceReviewDraft, REVIEW_DRAFT_VERSION } from "@/lib/invoice-results";
+import { typedPromiseDraft } from "@/lib/typed-promise";
 
 const billInput = z.object({ billId: z.string().uuid() });
 const confirmationInput = billInput.extend({
@@ -24,7 +25,7 @@ export const confirmCheck = createServerFn({ method: "POST" })
     const [b, l, p] = await Promise.all([
       supabase.from("bills").select("id,confirmed_at,comparison_result,orders_subtotal,sales_tax").eq("id", data.billId).eq("user_id", userId).single(),
       supabase.from("line_items").select("id").eq("bill_id", data.billId).eq("user_id", userId),
-      supabase.from("promises").select("id,promise_kind").eq("bill_id", data.billId).eq("user_id", userId),
+      supabase.from("promises").select("id,promise_kind,typed_details").eq("bill_id", data.billId).eq("user_id", userId),
     ]);
     if (b.error || !b.data || l.error || p.error) throw new Error("Couldn't load this check.");
     if (b.data.comparison_result) return { billId: data.billId };
@@ -35,6 +36,13 @@ export const confirmCheck = createServerFn({ method: "POST" })
     }
     const lines = data.lines.map((r) => ({ ...r, date: toDate(r.date), description: maskSensitive(r.description), reference_no: maskSensitive(r.reference_no, "identifier"), bank_ref: maskSensitive(r.bank_ref, "identifier"), order_no: maskSensitive(r.order_no ?? null, "identifier"), tax_amount: r.tax_amount ?? null, total_amount: r.total_amount ?? null }));
     const promises = data.promises.map((r) => ({ ...r, pnr: maskSensitive(r.pnr ?? null, "identifier"), promised_on: toDate(r.promised_on), item: maskSensitive(r.item), source: maskSensitive(r.source), status_text: maskSensitive(r.status_text), notes: maskSensitive(r.notes ?? null), bank_ref: r.bank_ref ?? "", promise_kind: p.data?.find((saved) => saved.id === r.id)?.promise_kind ?? null }));
+    for (const promise of promises) {
+      const saved = p.data?.find(row => row.id === promise.id);
+      if (!saved?.typed_details) promise.typed_details = null;
+      else if (!promise.typed_details) throw new Error("The typed promise fields are missing. Reload this check.");
+      if (promise.typed_details?.line_id && !lines.some(line => line.id === promise.typed_details?.line_id && line.type === "charge")) throw new Error("Choose a charge from this bill for the typed promise.");
+      if (promise.typed_details) promise.typed_details.taxes = promise.typed_details.taxes.map(tax => ({ ...tax, label: maskSensitive(tax.label) ?? "Tax" }));
+    }
     for (const { id, ...row } of lines) {
       const { error } = await supabase.from("line_items").update({ ...row, flagged: false, flag_reason: null }).eq("id", id).eq("bill_id", data.billId).eq("user_id", userId);
       if (error) throw new Error("Couldn't save the confirmed transactions.");
@@ -138,7 +146,7 @@ export const generateCheckDrafts = createServerFn({ method: "POST" })
       const saved = existing.data?.[0];
       if (saved && (saved.sent || saved.declined_at || saved.final_text !== null || saved.draft_version === DRAFT_VERSION)) continue;
       const { usageSink } = await import("@/lib/ai/usage.server");
-      const draft_text = await writeDraft(f, usageSink(supabase, userId, "draft", { billId: data.billId }));
+      const draft_text = f.typed_promise ? maskWithIdentifiers(typedPromiseDraft(f), [f.refund_id, f.transaction_id, f.bank_ref]) : await writeDraft(f, usageSink(supabase, userId, "draft", { billId: data.billId }));
       const row = { sent_to: f.contact_name ?? (f.recipient === "BANK" ? "your bank" : "the billing company"), draft_text, draft_version: DRAFT_VERSION };
       const { error: saveError } = saved
         ? await supabase.from("messages").update(row).eq("id", saved.id).eq("user_id", userId).eq("sent", false).is("final_text", null).is("declined_at", null)

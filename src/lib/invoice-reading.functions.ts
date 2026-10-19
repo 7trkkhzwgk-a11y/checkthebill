@@ -62,14 +62,14 @@ export const readInvoicePart = createServerFn({ method: "POST" })
     }
   });
 
-const finishSchema = z.object({ bill: documentSchema, promise: documentSchema, readingId: z.string().uuid(), billType: z.enum(["refund", "lab_invoice"]), pages: z.array(z.string()).min(1), priceList: z.array(z.string()).min(1) });
+const finishSchema = z.object({ bill: documentSchema, promise: documentSchema.optional(), typedPromise: z.string().trim().min(1).max(4000).optional(), readingId: z.string().uuid(), billType: z.enum(["refund", "lab_invoice"]), pages: z.array(z.string()).min(1), priceList: z.array(z.string()) }).refine(data => data.typedPromise ? !data.promise && data.priceList.length === 0 : !!data.promise && data.priceList.length > 0, "Choose a promise document or typed promise.");
 export const finishInvoiceReading = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: z.infer<typeof finishSchema>) => finishSchema.parse(input))
   .handler(async ({ data, context }) => {
     let step = "Combining invoice pages";
     try {
-      for (const path of [data.bill.path, data.promise.path, ...data.priceList, ...data.pages]) ownPath(path, context.userId);
+      for (const path of [data.bill.path, ...(data.promise ? [data.promise.path] : []), ...data.priceList, ...data.pages]) ownPath(path, context.userId);
       if (new Set(data.pages).size !== data.pages.length) throw new Error("An invoice page was supplied twice.");
       const read = async (path: string) => {
         const { data: blob, error } = await context.supabase.storage.from("documents").download(path);
@@ -80,14 +80,23 @@ export const finishInvoiceReading = createServerFn({ method: "POST" })
       for (const path of data.pages) pages.push(await read(path));
       const promises = [];
       for (const path of data.priceList) promises.push(await read(path));
+      let typed;
+      if (data.typedPromise) {
+        step = "Reading the promise you entered";
+        const { extractTypedPromise } = await import("@/lib/typed-promise.server");
+        const { usageSink } = await import("@/lib/ai/usage.server");
+        typed = await extractTypedPromise(data.typedPromise, usageSink(context.supabase, context.userId, "typed_promise", { readingId: data.readingId }));
+        promises.push(typed.extraction);
+      }
       const firstPromise = promises[0];
       if (!firstPromise) throw new Error("Promise reading is missing.");
       const promise = { ...firstPromise, agreed_items: promises.flatMap((p) => p.agreed_items) };
       const combined = combineInvoicePages(pages, promise);
-      if (data.billType === "refund") { combined.promise_kind = "refund"; combined.refund = promises.find((p) => p.refund)?.refund ?? null; combined.agreed_items = []; }
+      if ((typed && typed.details.kind === "refund") || (!typed && data.billType === "refund")) { combined.promise_kind = "refund"; combined.refund = promises.find((p) => p.refund)?.refund ?? null; combined.agreed_items = []; }
+      else if (typed) combined.promise_kind = "contract";
       step = "Saving invoice check";
       const { saveExtraction } = await import("@/lib/extraction-storage.server");
-      const saved = await saveExtraction(context.supabase, context.userId, data.bill.path, data.promise.path, data.billType, combined);
+      const saved = await saveExtraction(context.supabase, context.userId, data.bill.path, data.promise?.path ?? null, data.billType, combined, typed?.details);
       const { error: usageError } = await context.supabase.from("ai_usage").update({ bill_id: saved.billId }).eq("user_id", context.userId).eq("reading_id", data.readingId);
       if (usageError) throw new Error("Couldn't attach AI token usage to the check.");
       await context.supabase.storage.from("documents").remove([...data.pages, ...data.priceList]);
