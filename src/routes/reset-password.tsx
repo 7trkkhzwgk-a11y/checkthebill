@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { AppHeader } from "@/components/AppHeader";
@@ -34,11 +34,16 @@ export const Route = createFileRoute("/reset-password")({
 
 function ResetPasswordPage() {
   const navigate = useNavigate();
-  const [arrivedWithLink] = useState(() => isAuthLink(INITIAL_HASH, INITIAL_SEARCH));
+  const [link, setLink] = useState<"checking" | "valid" | "invalid">("checking");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+
+  // Checked after mount so the server render and the first client render agree.
+  useEffect(() => {
+    setLink(isAuthLink(INITIAL_HASH, INITIAL_SEARCH) ? "valid" : "invalid");
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -89,7 +94,11 @@ function ResetPasswordPage() {
               Go to sign in
             </Button>
           </div>
-        ) : !arrivedWithLink ? (
+        ) : link === "checking" ? (
+          <p className="mt-6 rounded-md border border-border bg-card p-4 text-sm">
+            Checking your reset link…
+          </p>
+        ) : link === "invalid" ? (
           <div className="mt-6 space-y-4 rounded-lg border border-border bg-card p-6 shadow-card">
             <p className="text-sm">
               This reset link isn&apos;t valid or has expired, so there&apos;s nothing to change
