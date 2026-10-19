@@ -151,7 +151,7 @@ describe("lab invoice review rules", () => {
     expect(matchInvoiceItems([l], [p])[0]).toMatchObject({ promise_id: "material", confidence: 1 });
   });
   it("retains Additional Wax Rim as a review finding when no contract entry exists", () => {
-    expect(compareConfirmed([{ ...l, description: "Additional Wax Rim" }], [p], "2026-10-19").findings[0]).toMatchObject({ line_id: "crown", disposition: "no_contract", note: "No contract price – review", flagged: false, charged: "120.00" });
+    expect(compareConfirmed([{ ...l, description: "Additional Wax Rim" }], [p, { ...p, id: "wax", item: "Signature denture wax bite rim workflow" }], "2026-10-19").findings[0]).toMatchObject({ line_id: "crown", disposition: "no_contract", note: "No contract price – review", flagged: false, charged: "120.00" });
   });
   it("labels matching non-fixed contract prices not comparable", () => {
     expect(compareConfirmed([l], [{ ...p, item: "Zirconia + Alloy" }], "2026-10-19").findings[0]).toMatchObject({ disposition: "not_comparable", flagged: false, note: "Not comparable" });
