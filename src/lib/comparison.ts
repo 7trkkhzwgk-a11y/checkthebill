@@ -21,7 +21,7 @@ export const reviewedPromiseSchema = z.object({
 export type ReviewedLine = z.infer<typeof reviewedLineSchema>;
 export type ReviewedPromise = z.infer<typeof reviewedPromiseSchema> & { promise_kind?: string | null };
 export type Finding = {
-  order_no?: string | null; invoice_item?: string | null; disposition?: "matched" | "included" | "not_comparable" | "no_contract";
+  order_no?: string | null; invoice_item?: string | null; disposition?: "matched" | "included" | "not_comparable" | "no_contract" | "staged";
   currency?: string | null; contact_name?: string | null; item?: string | null; pnr?: string | null; missing_amount?: string | null;
   kind: "refund" | "invoice"; promise_id: string; line_id: string | null;
   charged: string | null; promised: string | null; kept_by_merchant: string | null;
@@ -31,7 +31,7 @@ export type Finding = {
   flagged: boolean; flag_reason: string | null; note: string | null; recipient: "MERCHANT" | "BANK" | "VENDOR" | null;
   contact_reason: string | null; issue: string | null;
 };
-export type Reconciliation = { items_total: string; orders_subtotal: string | null; matches: boolean | null };
+export type Reconciliation = { items_total: string; orders_subtotal: string | null; matches: boolean | null; tax_total?: string; tax_matches?: boolean | null; credits_total?: string; credits_matches?: boolean | null; total?: string; total_matches?: boolean | null; tax_conflicts?: string[] };
 export type Comparison = { checked_on: string; findings: Finding[]; issues: string[]; status: "flagged" | "clear" | "incomplete"; reconciliation?: Reconciliation };
 export const money = (value: number | string) => new Decimal(value).toFixed(2);
 const equalMoney = (a: number | null, b: number | null) => a !== null && b !== null && new Decimal(a).eq(b);
@@ -40,9 +40,28 @@ const itemKey = (item: string | null) => item?.trim().replace(/\s+/g, " ").toLoc
 export function invoiceItemName(description: string | null): string {
   return (description ?? "").replace(/^\s*crown\s+\d+\s*[-–—]\s*/i, "").trim();
 }
-export function reconcileInvoice(lines: { amount: number | null; type: string | null }[], ordersSubtotal: number | null): Reconciliation {
+export function reconcileInvoice(lines: { amount: number | null; type: string | null; order_no?: string | null; reference_no?: string | null; tax_amount?: number | null }[], ordersSubtotal: number | null, totals?: { sales_tax?: number | null; bill_total?: number | null }): Reconciliation {
   const items_total = lines.filter((l) => l.type === "charge").reduce((sum, l) => sum.plus(l.amount ?? 0), new Decimal(0)).toFixed(2);
-  return { items_total, orders_subtotal: ordersSubtotal === null ? null : money(ordersSubtotal), matches: ordersSubtotal === null || lines.some((l) => l.type === "charge" && l.amount === null) ? null : new Decimal(items_total).eq(ordersSubtotal) };
+  const result: Reconciliation = { items_total, orders_subtotal: ordersSubtotal === null ? null : money(ordersSubtotal), matches: ordersSubtotal === null || lines.some((l) => l.type === "charge" && l.amount === null) ? null : new Decimal(items_total).eq(ordersSubtotal) };
+  if (!totals) return result;
+  const orders = new Map<string, number | null>();
+  const conflicts = new Set<string>();
+  let missingOrder = false;
+  for (const line of lines.filter((l) => l.type === "charge")) {
+    const order = line.order_no?.trim() || line.reference_no?.trim();
+    if (!order) { missingOrder = true; continue; }
+    const previous = orders.get(order);
+    if (previous != null && line.tax_amount != null && !new Decimal(previous).eq(line.tax_amount)) conflicts.add(order);
+    if (!orders.has(order) || previous == null) orders.set(order, line.tax_amount ?? null);
+  }
+  const tax = [...orders.values()].reduce<Decimal>((sum, value) => sum.plus(value ?? 0), new Decimal(0));
+  const credits = lines.filter((l) => l.type === "credit").reduce((sum, l) => sum.plus(l.amount ?? 0), new Decimal(0));
+  const incomplete = lines.some((l) => l.amount === null);
+  const taxIncomplete = missingOrder || [...orders.values()].some((v) => v === null) || conflicts.size > 0;
+  const total = new Decimal(items_total).plus(tax).minus(credits);
+  return { ...result, tax_total: tax.toFixed(2), tax_matches: totals.sales_tax == null || taxIncomplete ? null : tax.eq(totals.sales_tax), credits_total: credits.toFixed(2),
+    credits_matches: incomplete || ordersSubtotal == null || totals.sales_tax == null || totals.bill_total == null ? null : new Decimal(ordersSubtotal).plus(totals.sales_tax).minus(totals.bill_total).eq(credits),
+    total: total.toFixed(2), total_matches: incomplete || taxIncomplete || totals.bill_total == null ? null : total.eq(totals.bill_total), tax_conflicts: [...conflicts] };
 }
 
 // A price-list row is comparable only when it carries one fixed agreed price.
@@ -56,7 +75,7 @@ export function isComparablePromise(p: Pick<ReviewedPromise, "item" | "promised_
 
 // Staged items (partial dentures or rows marked staged) bill across orders; they are never flagged.
 export function isStagedItem(p: Pick<ReviewedPromise, "item" | "notes">): boolean {
-  return /partial\s+denture|\bstaged\b/i.test(`${p.item ?? ""} ${p.notes ?? ""}`);
+  return /\bpartial\b|\bstaged\b/i.test(`${p.item ?? ""} ${p.notes ?? ""}`);
 }
 
 const STOPWORDS = new Set(["the", "a", "an", "of", "for", "and", "with", "per", "item", "each", "tooth", "teeth", "no", "type"]);
@@ -126,7 +145,7 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
 }
 
 // Invoked only at the authenticated server confirmation boundary; AI never computes these values.
-export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string, options?: { orders_subtotal?: number | null; sales_tax?: number | null; confirmed_matches?: Record<string, string> }): Comparison {
+export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string, options?: { orders_subtotal?: number | null; sales_tax?: number | null; bill_total?: number | null; confirmed_matches?: Record<string, string> }): Comparison {
   const billTotals = { orders_subtotal: options?.orders_subtotal ?? null, sales_tax: options?.sales_tax ?? null };
   if (!toDate(today)) throw new Error("Invalid comparison date.");
   const findings: Finding[] = [];
@@ -149,10 +168,11 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     }
   }
   if (billTotals?.sales_tax != null) {
-    const taxSum = chargeLines.reduce((sum, l) => sum.plus(l.tax_amount ?? 0), new Decimal(0));
-    if (taxSum.gt(0) && !taxSum.eq(new Decimal(billTotals.sales_tax))) {
-      issues.push(`The order-level sales tax adds up to ${taxSum.toFixed(2)}, but the invoice Sales Tax total is ${money(billTotals.sales_tax)}. Check the tax amounts.`);
+    const taxCheck = reconcileInvoice(lines, billTotals.orders_subtotal, options);
+    if (taxCheck.tax_matches === false) {
+      issues.push(`The order-level sales tax adds up to ${taxCheck.tax_total}, but the invoice Sales Tax total is ${money(billTotals.sales_tax)}. Check the tax amounts.`);
     }
+    if (taxCheck.tax_conflicts?.length) issues.push(`Conflicting tax amounts for order ${taxCheck.tax_conflicts.join(", ")}. Check the tax amounts.`);
   }
   for (const p of refunds) {
     const f = base(p, "refund");
@@ -195,6 +215,14 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
       f.invoice_item = line.description;
       f.disposition = match?.disposition === "included" ? "included" : p ? isComparablePromise(p) ? "matched" : "not_comparable" : "no_contract";
       f.charged = line.amount === null ? null : money(line.amount);
+      if (f.disposition !== "included" && (isStagedItem({ item: line.description, notes: null }) || (p && isStagedItem(p)))) {
+        f.disposition = "staged";
+        f.promised = null;
+        f.overcharge = null;
+        f.note = "Staged – check total when order completes.";
+        findings.push(f);
+        continue;
+      }
       if (f.disposition !== "matched" || !p) {
         f.promised = null;
         f.note = f.disposition === "included" ? "Included – $0" : f.disposition === "not_comparable" ? "Not comparable" : "No contract price – review";
@@ -221,7 +249,7 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     }
   }
   if (!promises.length || !lines.some((l) => l.type === "charge") || !findings.length) issues.push("There is not enough matching bill and promise information to finish this check.");
-  return { checked_on: today, findings, issues: [...new Set(issues)], status: findings.some((f) => f.flagged) ? "flagged" : issues.length ? "incomplete" : "clear", ...(!refunds.length ? { reconciliation: reconcileInvoice(lines, billTotals.orders_subtotal) } : {}) };
+  return { checked_on: today, findings, issues: [...new Set(issues)], status: findings.some((f) => f.flagged) ? "flagged" : issues.length ? "incomplete" : "clear", ...(!refunds.length ? { reconciliation: reconcileInvoice(lines, billTotals.orders_subtotal, options) } : {}) };
 }
 
 export function countWordsChanged(draft: string, final: string): number {
