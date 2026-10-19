@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { confirmCheck, generateCheckDrafts } from "@/lib/comparison.functions";
+import { matchInvoiceItems, isComparablePromise, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
 
 export const Route = createFileRoute("/_authenticated/check/$billId")({
   head: () => ({
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/_authenticated/check/$billId")({
 });
 
 type Line = { id: string; date: string | null; description: string | null; amount: number | null; type: string | null; reference_no: string | null; bank_ref: string | null };
-type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null; pnr: string | null };
+type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null; pnr: string | null; promise_kind: string | null; notes: string | null };
 
 function Cell({ value, onChange, type = "text", disabled }: { value: string; onChange: (v: string) => void; type?: string; disabled: boolean }) {
   return <Input className="h-8 min-w-24 font-mono text-xs" type={type === "date" ? "text" : type} step={type === "number" ? "any" : undefined} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
@@ -41,6 +42,7 @@ function CheckPage() {
   const [confirmed, setConfirmed] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [proms, setProms] = useState<Prom[]>([]);
+  const [matchOverrides, setMatchOverrides] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -49,7 +51,7 @@ function CheckPage() {
       const [b, l, p] = await Promise.all([
         supabase.from("bills").select("issuer, confirmed_at, bill_total,currency").eq("id", billId).single(),
         supabase.from("line_items").select("id,date,description,amount,type,reference_no,bank_ref").eq("bill_id", billId).order("date"),
-        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source,pnr").eq("bill_id", billId),
+        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source,pnr,promise_kind,notes").eq("bill_id", billId),
       ]);
       setIssuer(b.data?.issuer ?? null);
       setBillTotal(b.data?.bill_total ?? null);
@@ -67,13 +69,14 @@ function CheckPage() {
     setProms((ps) => ps.map((x, j) => (j === i ? { ...x, [k]: k === "promised_amount" || k === "original_charge" ? (v === "" ? null : Number(v)) : k === "bank_ref" ? v : v || null } : x)));
 
   async function looksRight() {
+    if (unconfirmedLow.length) { toast.error("Confirm each low-confidence item match before continuing."); return; }
     setSaving(true);
     try {
       const validLines = lines.map((line) => {
         if (line.type !== "charge" && line.type !== "credit") throw new Error("Choose charge or credit for each transaction.");
         return { ...line, type: line.type };
       });
-      await confirm({ data: { billId, issuer, billTotal, currency, lines: validLines, promises: proms } });
+      await confirm({ data: { billId, issuer, billTotal, currency, lines: validLines, promises: proms, confirmedMatches: matchOverrides } });
       setConfirmed(true);
       try { await draft({ data: { billId } }); }
       catch (error) { toast.error(error instanceof Error ? error.message : "The maths is saved, but the message couldn't be written."); }
@@ -86,6 +89,12 @@ function CheckPage() {
   }
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  const isPriceList = proms.length > 0 && proms.every((p) => p.promise_kind === "price_list" || p.promise_kind === "contract");
+  const suggestedMatches = isPriceList && !confirmed
+    ? matchInvoiceItems(lines as ReviewedLine[], proms as unknown as ReviewedPromise[])
+    : [];
+  const unconfirmedLow = suggestedMatches.filter((m) => m.promise_id && m.confidence < 0.85 && !matchOverrides[m.line_id]);
 
   const th = "px-2 py-2 text-left font-mono text-[10px] uppercase tracking-wider text-muted-foreground";
   return (
@@ -132,6 +141,27 @@ function CheckPage() {
       </div>
 
       <h2 className="mt-8 font-semibold">Promise</h2>
+      {isPriceList ? (
+        <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-card shadow-card">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-border">
+              {["Item", "Agreed price", "Notes"].map((h) => <th key={h} className={th}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {proms.map((p, i) => {
+                const comparable = isComparablePromise(p);
+                return (
+                  <tr key={p.id} className={`border-b border-border last:border-0 ${comparable ? "" : "opacity-60"}`}>
+                    <td className="p-1"><Cell value={p.item ?? ""} onChange={(v) => setP(i, "item", v)} disabled={confirmed} /></td>
+                    <td className="p-1"><Cell type="number" value={p.promised_amount?.toString() ?? ""} onChange={(v) => setP(i, "promised_amount", v)} disabled={confirmed} /></td>
+                    <td className="p-2 text-xs text-muted-foreground">{comparable ? (p.notes ?? "—") : "Not comparable — skipped"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div className="mt-3 space-y-4">
         {proms.map((p, i) => (
           <section key={p.id} aria-label={`Promise ${i + 1}`} className="rounded-lg border border-border bg-card p-5 shadow-card">
@@ -158,6 +188,35 @@ function CheckPage() {
           </section>
         ))}
       </div>
+      )}
+
+      {isPriceList && !confirmed && suggestedMatches.some((m) => m.promise_id) && (
+        <>
+          <h2 className="mt-8 font-semibold">Suggested item matches</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Low-confidence matches must be confirmed before comparing.</p>
+          <div className="mt-2 space-y-2">
+            {suggestedMatches.filter((m) => m.promise_id).map((m) => {
+              const line = lines.find((l) => l.id === m.line_id);
+              const promise = proms.find((p) => p.id === (matchOverrides[m.line_id] ?? m.promise_id));
+              const low = m.confidence < 0.85;
+              return (
+                <div key={m.line_id} className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-card">
+                  <span className="min-w-0 flex-1 break-words">{line?.description ?? m.line_id}</span>
+                  <span className="text-muted-foreground">→</span>
+                  <select
+                    className="h-8 max-w-64 rounded-md border border-input bg-background px-2 text-xs"
+                    value={matchOverrides[m.line_id] ?? m.promise_id ?? ""}
+                    onChange={(e) => setMatchOverrides((prev) => ({ ...prev, [m.line_id]: e.target.value }))}
+                  >
+                    {proms.filter(isComparablePromise).map((p) => <option key={p.id} value={p.id}>{p.item}</option>)}
+                  </select>
+                  <span className={`font-mono text-xs ${low ? "text-destructive" : "text-success"}`}>{Math.round(m.confidence * 100)}%{low && !matchOverrides[m.line_id] ? " — confirm" : ""}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {confirmed ? (
         <div className="mt-8 space-y-4"><p className="flex items-center gap-2 font-medium text-success"><CheckCircle2 className="h-5 w-5" /> Lines confirmed</p><Button variant="signal" disabled={saving} onClick={looksRight}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}View result</Button></div>

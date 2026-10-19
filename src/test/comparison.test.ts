@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareConfirmed, countWordsChanged, draftFacts, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
+import { compareConfirmed, countWordsChanged, draftFacts, isBilateral, isComparablePromise, lineQuantity, matchInvoiceItems, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
 
 const charge: ReviewedLine = { id: "charge", date: "2026-10-01", description: "Train ticket", amount: 7475.40, type: "charge", reference_no: "9876543210987654", bank_ref: null };
 const refund: ReviewedPromise = { id: "promise", item: "Train ticket refund", original_charge: 7475.40, promised_amount: 7180.00, reference_no: "1234567890123456", transaction_id: "9876543210987654", bank_ref: "", promised_on: "2026-10-08", status_text: "Refund amount has been sent", source: "Refund confirmation", promise_kind: "refund" };
@@ -64,6 +64,54 @@ describe("confirmed invoice comparison", () => {
   });
   it("does not report unmatched invoice items as clear", () => {
     expect(compare([{ ...charge, description: "Unknown item" }], agreed).status).toBe("incomplete");
+  });
+});
+
+describe("price-list matching and flags", () => {
+  const priceList = (item: string, promised_amount: number | null, notes: string | null = null): ReviewedPromise =>
+    ({ id: `p-${item}`, item, original_charge: null, promised_amount, reference_no: null, transaction_id: null, bank_ref: "", promised_on: null, status_text: null, source: "Price list", promise_kind: "price_list", notes });
+  const invoiceLine = (description: string, amount: number, id = description): ReviewedLine =>
+    ({ id, date: "2026-10-01", description, amount, type: "charge", reference_no: null, bank_ref: null });
+
+  it("matches invoice items to price-list rows by keywords", () => {
+    const promises = [priceList("Cast Metal Chrome Cobalt", 5000), priceList("Signature denture wax bite rim workflow", 1200)];
+    const matches = matchInvoiceItems([invoiceLine("Chrome-Cobalt partial", 5000), invoiceLine("Wax Rim Workflow", 1200)], promises);
+    expect(matches.find((m) => m.line_id === "Chrome-Cobalt partial")?.promise_id).toBe("p-Cast Metal Chrome Cobalt");
+    expect(matches.find((m) => m.line_id === "Wax Rim Workflow")?.promise_id).toBe("p-Signature denture wax bite rim workflow");
+  });
+  it("reads (x2) as quantity 2 and teeth on both sides as bilateral", () => {
+    expect(lineQuantity("Crown (x2)")).toBe(2);
+    expect(isBilateral("Crowns teeth 14 and 24")).toBe(true);
+    expect(isBilateral("Crown tooth 14")).toBe(false);
+  });
+  it("flags only charges above the agreed price times quantity", () => {
+    const promises = [priceList("Crown", 1000)];
+    const result = compareConfirmed([invoiceLine("Crown (x2)", 2500)], promises, "2026-10-18");
+    expect(result.findings[0]).toMatchObject({ flagged: true, recipient: "VENDOR", overcharge: "500.00", promised: "2000.00" });
+  });
+  it("labels below-list charges without flagging them as errors", () => {
+    const promises = [priceList("Crown", 1000)];
+    const result = compareConfirmed([invoiceLine("Crown", 800)], promises, "2026-10-18");
+    expect(result.findings[0]).toMatchObject({ flagged: false, note: "Below list price – check if this is a discount or staged billing." });
+    expect(result.status).toBe("clear");
+  });
+  it("skips not-comparable price-list rows", () => {
+    expect(isComparablePromise(priceList("Crown + Alloy", 1000))).toBe(false);
+    expect(isComparablePromise(priceList("Denture", null, "N/A"))).toBe(false);
+    expect(isComparablePromise(priceList("Bridge", 500, "500-900 range"))).toBe(false);
+    expect(isComparablePromise(priceList("Crown", 1000))).toBe(true);
+  });
+  it("warns when pre-tax items or tax do not add up to the printed invoice totals", () => {
+    const promises = [priceList("Crown", 1000)];
+    const result = compareConfirmed([{ ...invoiceLine("Crown", 900), tax_amount: 50 }], promises, "2026-10-18", { orders_subtotal: 1000, sales_tax: 80 });
+    expect(result.status).toBe("incomplete");
+    expect(result.issues.some((i) => i.includes("Orders subtotal"))).toBe(true);
+    expect(result.issues.some((i) => i.includes("Sales Tax"))).toBe(true);
+  });
+  it("honours a user-confirmed low-confidence match", () => {
+    const promises = [priceList("Abutment crown", 3000), priceList("Crown", 1000)];
+    const result = compareConfirmed([invoiceLine("Crown", 3500)], promises, "2026-10-18", { confirmed_matches: { Crown: "p-Abutment crown" } });
+    expect(result.findings[0]).toMatchObject({ promise_id: "p-Abutment crown", overcharge: "500.00", flagged: true });
   });
 });
 

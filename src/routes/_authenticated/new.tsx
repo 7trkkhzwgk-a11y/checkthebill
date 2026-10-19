@@ -74,7 +74,8 @@ function NewCheck() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-10">
       <h1 className="text-3xl font-bold">New check</h1>
-      <p className="mt-2 text-muted-foreground">Files are stored privately. Only you can see them.</p>
+<p className="mt-2 text-muted-foreground">Files are stored privately. Only you can see them.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Remove patient names before uploading.</p>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         <Drop label="Bill" hint="Card statement or vendor invoice" file={bill} onFile={setBill} />
         <Drop label="Promise" hint="Refund confirmation, contract or agreed price list" file={promise} onFile={setPromise} />

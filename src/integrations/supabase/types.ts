@@ -23,6 +23,8 @@ export type Database = {
           file_link: string
           id: string
           issuer: string | null
+          orders_subtotal: number | null
+          sales_tax: number | null
           uploaded_at: string
           user_id: string
         }
@@ -34,6 +36,8 @@ export type Database = {
           file_link: string
           id?: string
           issuer?: string | null
+          orders_subtotal?: number | null
+          sales_tax?: number | null
           uploaded_at?: string
           user_id?: string
         }
@@ -45,6 +49,8 @@ export type Database = {
           file_link?: string
           id?: string
           issuer?: string | null
+          orders_subtotal?: number | null
+          sales_tax?: number | null
           uploaded_at?: string
           user_id?: string
         }
@@ -60,7 +66,10 @@ export type Database = {
           flag_reason: string | null
           flagged: boolean
           id: string
+          order_no: string | null
           reference_no: string | null
+          tax_amount: number | null
+          total_amount: number | null
           type: string | null
           user_id: string
         }
@@ -73,7 +82,10 @@ export type Database = {
           flag_reason?: string | null
           flagged?: boolean
           id?: string
+          order_no?: string | null
           reference_no?: string | null
+          tax_amount?: number | null
+          total_amount?: number | null
           type?: string | null
           user_id?: string
         }
@@ -86,7 +98,10 @@ export type Database = {
           flag_reason?: string | null
           flagged?: boolean
           id?: string
+          order_no?: string | null
           reference_no?: string | null
+          tax_amount?: number | null
+          total_amount?: number | null
           type?: string | null
           user_id?: string
         }
@@ -157,6 +172,7 @@ export type Database = {
           file_link: string | null
           id: string
           item: string | null
+          notes: string | null
           original_charge: number | null
           pnr: string | null
           promise_kind: string | null
@@ -174,6 +190,7 @@ export type Database = {
           file_link?: string | null
           id?: string
           item?: string | null
+          notes?: string | null
           original_charge?: number | null
           pnr?: string | null
           promise_kind?: string | null
@@ -191,6 +208,7 @@ export type Database = {
           file_link?: string | null
           id?: string
           item?: string | null
+          notes?: string | null
           original_charge?: number | null
           pnr?: string | null
           promise_kind?: string | null
