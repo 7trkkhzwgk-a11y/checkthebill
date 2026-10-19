@@ -1,3 +1,8 @@
+# Published invoice reading
+- [ ] Split lab invoice PDFs into single-page private uploads and sequential server requests with progress.
+- [ ] Extract and privately cache price lists separately; combine masked pages before saving the check.
+- [ ] Show step-specific failures; test and verify invoice/refund reading, then publish the update.
+
 # Message routing regression
 - [x] Correct refund recipients and exact single requests; keep vendor recipients separate.
 - [x] Re-test merchant refunds, bank refunds and vendor messages: 84 tests passed; signed-in merchant draft generation/read-back and lab message verified. Bank saved recipient verified; its previously edited/declined draft was preserved.

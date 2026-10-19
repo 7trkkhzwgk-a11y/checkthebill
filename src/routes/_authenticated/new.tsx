@@ -6,6 +6,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { runExtraction } from "@/lib/checks.functions";
 import { Button } from "@/components/ui/button";
 import { extractionErrorMessage, validateDocumentSize } from "@/lib/extraction-errors";
+import { readInvoicePart, finishInvoiceReading } from "@/lib/invoice-reading.functions";
+import { readingStepError } from "@/lib/invoice-extraction";
 
 export const Route = createFileRoute("/_authenticated/new")({
   head: () => ({
@@ -41,6 +43,8 @@ function NewCheck() {
   const navigate = useNavigate();
   const { user } = Route.useRouteContext();
   const extract = useServerFn(runExtraction);
+  const readPart = useServerFn(readInvoicePart);
+  const finishReading = useServerFn(finishInvoiceReading);
   const [bill, setBill] = useState<File | null>(null);
   const [promise, setPromise] = useState<File | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -58,16 +62,53 @@ function NewCheck() {
   async function start() {
     if (!bill || !promise) return;
     setErrorMessage(null);
+    let step = "Checking files";
     try {
       validateDocumentSize(bill.size);
       validateDocumentSize(promise.size);
+      step = "Uploading files";
       setBusy("Uploading privately…");
       const [b, p] = await Promise.all([upload(bill, "bill"), upload(promise, "promise")]);
+      if (billType === "lab_invoice") {
+        step = "Preparing invoice pages";
+        setBusy("Preparing invoice pages…");
+        const { splitInvoicePdf } = await import("@/lib/pdf-pages");
+        const files = await splitInvoicePdf(bill);
+        step = "Reading price list";
+        setBusy("Reading price list…");
+        const priceList = await readPart({ data: { file: p, part: "price_list" } });
+        if (!priceList.ok) throw new Error(priceList.error);
+        const pages: string[] = [];
+        const uploadedPages: string[] = [];
+        let previousOrder: string | null = null;
+        try {
+          for (const [index, file] of files.entries()) {
+            step = `Reading page ${index + 1} of ${files.length}`;
+            setBusy(`${step}…`);
+            const page = files.length === 1 ? b : await upload(file, `page-${index + 1}`);
+            if (page.path !== b.path) uploadedPages.push(page.path);
+            const result = await readPart({ data: { file: page, part: "invoice", previousOrder } });
+            if (!result.ok) throw new Error(result.error);
+            pages.push(result.cachePath);
+            previousOrder = result.lastOrder ?? previousOrder;
+          }
+          step = "Combining and saving invoice";
+          setBusy("Combining and saving invoice…");
+          const result = await finishReading({ data: { bill: b, promise: p, pages, priceList: priceList.cachePath } });
+          if (!result.ok) throw new Error(result.error);
+          await navigate({ to: "/check/$billId", params: { billId: result.billId } });
+          return;
+        } finally {
+          if (uploadedPages.length || pages.length) await supabase.storage.from("documents").remove([...uploadedPages, ...pages]);
+        }
+      }
+      step = "Reading bill and refund promise";
       setBusy("Reading every line…");
       const { billId } = await extract({ data: { bill: b, promise: p, billType } });
       navigate({ to: "/check/$billId", params: { billId } });
     } catch (e) {
-      setErrorMessage(extractionErrorMessage(e));
+      const message = extractionErrorMessage(e);
+      setErrorMessage(billType === "lab_invoice" ? readingStepError(step, message) : message);
       setBusy(null);
     }
   }
@@ -86,6 +127,7 @@ function NewCheck() {
               type="button"
               role="radio"
               aria-checked={billType === value}
+              disabled={!!busy}
               onClick={() => setBillType(value)}
               className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${billType === value ? "border-accent bg-accent/10 text-foreground" : "border-input bg-card text-muted-foreground hover:border-accent"}`}
             >
@@ -101,6 +143,7 @@ function NewCheck() {
       <Button variant="signal" size="lg" className="mt-8 w-full md:w-auto" disabled={!bill || !promise || !!busy} onClick={start}>
         {busy ? (<><Loader2 className="h-4 w-4 animate-spin" /> {busy}</>) : "Read both files"}
       </Button>
+      {busy && <p role="status" aria-live="polite" className="mt-3 text-sm text-muted-foreground">{busy}</p>}
       {errorMessage && <p role="alert" className="mt-4 text-sm text-destructive">{errorMessage}</p>}
     </main>
   );
