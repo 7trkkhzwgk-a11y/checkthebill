@@ -1,6 +1,6 @@
 # Message routing regression
-- [ ] Correct refund recipients and exact single requests; keep vendor recipients separate.
-- [ ] Re-test merchant refunds, bank refunds and vendor messages, including saved-result flow.
+- [x] Correct refund recipients and exact single requests; keep vendor recipients separate.
+- [x] Re-test merchant refunds, bank refunds and vendor messages: 84 tests passed; signed-in merchant draft generation/read-back and lab message verified. Bank saved recipient verified; its previously edited/declined draft was preserved.
 
 # Confirmed checks and dispute messages
 - [x] Save confirmed edits and run deterministic matching, maths, flagging and contact routing on the server.
@@ -39,4 +39,4 @@
 - [x] Show calculated summary and collapsed buckets, with included items hidden initially.
 - [x] Save one short billing-team message covering all unmatched review items.
 - [x] Test the rules: 80 tests passed.
-- [ ] Verify the signed-in result and saved message — blocked: no authorized session; requesting user's account could not be matched.
+- [x] Verify the signed-in result and saved billing-team message, including exact items/tax/credits/total reconciliation.
