@@ -20,6 +20,14 @@ function filePart(f: InFile) {
 }
 
 export async function extractLines(bill: InFile, promise: InFile): Promise<Extraction> {
+  return extractFiles([bill, promise]);
+}
+
+export async function extractInvoicePart(file: InFile, part: "invoice" | "price_list", previousOrder: string | null = null): Promise<Extraction> {
+  return extractFiles([file], part, previousOrder);
+}
+
+async function extractFiles(files: InFile[], part?: "invoice" | "price_list", previousOrder: string | null = null): Promise<Extraction> {
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("AI is not configured.");
   const runIdFetch = createLovableAiGatewayRunIdFetch();
@@ -33,15 +41,15 @@ export async function extractLines(bill: InFile, promise: InFile): Promise<Extra
   let streamError: unknown;
   const result = streamText({
     model: provider.responses("openai/gpt-6-astra"),
-    instructions: `${EXTRACTION_INSTRUCTION}\n\n${PRIVACY_RULES}\n\nThe first file is the BILL; copy its business issuer into issuer. The second file is the PROMISE; copy the actual business issuing the promise into source (e.g. IRCTC), not a generic document label. Copy the printed currency as its ISO code (INR for ₹, USD for US $), or null if undetermined; do not convert currencies. Copy the full printed PNR into pnr or null when absent. Keep item a short factual booked/cancelled item label, without names.`,
+    instructions: `${EXTRACTION_INSTRUCTION}\n\n${PRIVACY_RULES}\n\n${part === "invoice" ? `This file is ONE page of the BILL invoice. Return only this page's printed items, never items from other pages. Set source=null, promise_kind=price_list, refund=null, agreed_items=[]. Only copy full-invoice totals explicitly labelled Orders, Sales Tax total or invoice total; page subtotals are not full-invoice totals. A continued order without a new order heading belongs to the previous page's final order ${JSON.stringify(previousOrder)}; use that exact order number only for continuation rows before a new printed order. Never infer amounts or tax from previous pages.` : part === "price_list" ? "This file is only the PROMISE contract/price list. Set issuer=null, bill_lines=[], bill_total=null, orders_subtotal=null, sales_tax=null, refund=null, and promise_kind=contract or price_list. Copy source from the actual business issuing the contract and extract all agreed_items." : "The first file is the BILL; copy its business issuer into issuer. The second file is the PROMISE; copy the actual business issuing the promise into source (e.g. IRCTC), not a generic document label."} Copy the printed currency as its ISO code (INR for ₹, USD for US $), or null if undetermined; do not convert currencies. Copy the full printed PNR into pnr or null when absent. Keep item a short factual booked/cancelled item label, without names.`,
     messages: [
       {
         role: "user",
-        content: [
+        content: part ? [{ type: "text", text: part === "invoice" ? "BILL invoice page:" : "PROMISE price list:" }, filePart(files[0] as InFile)] : [
           { type: "text", text: "BILL file:" },
-          filePart(bill),
+          filePart(files[0] as InFile),
           { type: "text", text: "PROMISE file:" },
-          filePart(promise),
+          filePart(files[1] as InFile),
         ],
       },
     ],
