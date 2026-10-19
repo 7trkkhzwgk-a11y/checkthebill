@@ -129,7 +129,7 @@ function ResultPage() {
     {comparison.findings.some((f) => f.disposition === "no_contract") && <section className="mt-8 border-t border-border pt-6"><h2 className="text-xl font-semibold">No contract price – review</h2><div className="mt-4 divide-y divide-border">{comparison.findings.filter((f) => f.disposition === "no_contract").map((f) => <div key={f.line_id} className="py-4"><h3 className="break-words font-medium">{f.invoice_item ?? f.item}</h3><p className="mt-1 font-mono text-sm">{formatCurrency(f.charged, data.bill.currency)}</p>{f.order_no && <p className="mt-1 break-all text-xs text-muted-foreground">Reference: {f.order_no}</p>}</div>)}</div></section>}
     {(missingDraft || outdatedDraft) && <Button variant="signal" className="mt-6" disabled={busy} onClick={draft}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{outdatedDraft ? "Update message" : "Write message"}</Button>}
     <AskQuestion billId={billId} />
-    <p className="mt-6 text-xs text-muted-foreground">AI usage: {data.aiTokens.toLocaleString("en-US")} tokens</p>
+    <p className="mt-6 text-xs text-muted-foreground">{data.aiTokens ? `AI usage: ${data.aiTokens.toLocaleString("en-US")} tokens` : "Read by code – 0 AI tokens"}</p>
   </main>;
 }
 
@@ -164,6 +164,6 @@ function LabResults({ data, billId, busy, draft }: { data: Awaited<ReturnType<ty
     {reviewMessage && <section className="mt-8 border-t border-border pt-6"><MessageEditor key={reviewMessage.id} message={reviewMessage} billId={billId} contactName={`${reviewMessage.sent_to ?? data.bill.issuer ?? "the vendor"} billing team`} /></section>}
     {needDraft && <Button variant="signal" className="mt-6" disabled={busy} onClick={draft}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Write message</Button>}
     <AskQuestion billId={billId} />
-    <p className="mt-6 text-xs text-muted-foreground">AI usage: {data.aiTokens.toLocaleString("en-US")} tokens</p>
+    <p className="mt-6 text-xs text-muted-foreground">{data.aiTokens ? `AI usage: ${data.aiTokens.toLocaleString("en-US")} tokens` : "Read by code – 0 AI tokens"}</p>
   </main>;
 }
