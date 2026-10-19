@@ -30,8 +30,9 @@
 - [x] Run rule tests and verify the signed-in review-to-result flow.
 
 # Lab result summary and buckets
-- [ ] Count tax once per order and reconcile items, tax, credits and total.
-- [ ] Classify every item once; suppress all staged-item comparison maths.
-- [ ] Show calculated summary and collapsed buckets, with included items hidden initially.
-- [ ] Save one short billing-team message covering all unmatched review items.
-- [ ] Test the rules and verify the signed-in result and saved message.
+- [x] Count tax once per order and reconcile items, tax, credits and total.
+- [x] Classify every item once; suppress all staged-item comparison maths.
+- [x] Show calculated summary and collapsed buckets, with included items hidden initially.
+- [x] Save one short billing-team message covering all unmatched review items.
+- [x] Test the rules: 80 tests passed.
+- [ ] Verify the signed-in result and saved message — blocked: no authorized session; requesting user's account could not be matched.
