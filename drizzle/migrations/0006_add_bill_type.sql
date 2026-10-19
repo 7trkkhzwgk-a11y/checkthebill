@@ -1,0 +1,1 @@
+ALTER TABLE public.bills ADD COLUMN bill_type TEXT NOT NULL DEFAULT 'refund' CHECK (bill_type IN ('refund','lab_invoice'));

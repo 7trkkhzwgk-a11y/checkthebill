@@ -6,6 +6,7 @@ import { validateDocumentSize } from "@/lib/extraction-errors";
 type Input = {
   bill: { path: string; name: string; mime: string };
   promise: { path: string; name: string; mime: string };
+  billType?: "refund" | "lab_invoice";
 };
 
 const ALLOWED = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
@@ -23,8 +24,9 @@ export const runExtraction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: Input) => {
     for (const f of [input.bill, input.promise]) {
-      if (!f?.path || !ALLOWED.includes(f.mime)) throw new Error("Unsupported file type.");
+    if (!f?.path || !ALLOWED.includes(f.mime)) throw new Error("Unsupported file type.");
     }
+    if (input.billType !== undefined && input.billType !== "refund" && input.billType !== "lab_invoice") throw new Error("Unknown bill type.");
     return input;
   })
   .handler(async ({ data, context }) => {
@@ -46,7 +48,7 @@ export const runExtraction = createServerFn({ method: "POST" })
 
     const { data: bill, error: billErr } = await supabase
       .from("bills")
-      .insert({ user_id: userId, issuer: ex.issuer, currency: ex.currency, bill_total: ex.bill_total, orders_subtotal: ex.orders_subtotal, sales_tax: ex.sales_tax, file_link: data.bill.path })
+      .insert({ user_id: userId, issuer: ex.issuer, currency: ex.currency, bill_total: ex.bill_total, orders_subtotal: ex.orders_subtotal, sales_tax: ex.sales_tax, bill_type: data.billType ?? "refund", file_link: data.bill.path })
       .select("id")
       .single();
     if (billErr || !bill) throw new Error(billErr?.message ?? "Couldn't save bill.");

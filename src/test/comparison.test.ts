@@ -123,3 +123,28 @@ describe("word edits", () => {
     expect(countWordsChanged("Please send refund", "Please send refund")).toBe(0);
   });
 });
+describe("staged items", () => {
+  const priceList = (item: string, amount: number | null, notes: string | null = null) => ({ id: `p-${item}`, promised_on: null, item, original_charge: null, promised_amount: amount, reference_no: null, transaction_id: null, bank_ref: null, status_text: null, source: "Lab", notes, promise_kind: "price_list" });
+  const invoiceLine = (description: string, amount: number) => ({ id: description, date: "2026-10-01", description, amount, type: "charge" as const, reference_no: null, bank_ref: null });
+  it("labels staged items without flagging them, even above the agreed price", () => {
+    const promises = [priceList("Partial denture", 5000)];
+    const result = compareConfirmed([{ ...invoiceLine("Partial denture stage 1", 3000), order_no: "ORD-1" }], promises, "2026-10-18");
+    expect(result.findings[0]).toMatchObject({ flagged: false, note: "Staged – check total when order completes." });
+    expect(result.status).toBe("clear");
+  });
+  it("treats rows marked staged in notes as staged", () => {
+    const promises = [priceList("Framework", 4000, "Staged billing")];
+    const result = compareConfirmed([invoiceLine("Framework", 4500)], promises, "2026-10-18");
+    expect(result.findings[0]?.flagged).toBe(false);
+    expect(result.findings[0]?.note).toContain("Staged");
+  });
+  it("still flags fixed-price items above the contract price in the same invoice", () => {
+    const promises = [priceList("Partial denture", 5000), priceList("Crown", 1000)];
+    const result = compareConfirmed([invoiceLine("Partial denture stage 1", 6000), invoiceLine("Crown", 1200)], promises, "2026-10-18");
+    const denture = result.findings.find((f) => f.item === "Partial denture");
+    const crown = result.findings.find((f) => f.item === "Crown");
+    expect(denture?.flagged).toBe(false);
+    expect(crown).toMatchObject({ flagged: true, overcharge: "200.00" });
+    expect(result.status).toBe("flagged");
+  });
+});
