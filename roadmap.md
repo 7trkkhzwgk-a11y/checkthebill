@@ -1,6 +1,7 @@
 # Fixed invoice aliases
-- [ ] Apply exact aliases before fuzzy matching, preserving quantities, included and staged rules.
-- [ ] Verify dispute drafts exclude all items except review/overcharged; run tests and signed-in results check.
+- [x] Apply exact aliases before fuzzy matching, preserving quantities, included and staged rules.
+- [x] Verify dispute item filtering with synthetic tests; refresh untouched saved review drafts; 125 tests pass and build OK.
+- [ ] Verify saved results while signed in — blocked: no active preview session and requesting-user session mint found no matching account; user must sign in.
 
 # Groq migration
 - [x] Move all document reading, drafts and chat to server-only Groq with requested models.
