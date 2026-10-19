@@ -39,7 +39,7 @@ const equalMoney = (a: number | null, b: number | null) => a !== null && b !== n
 const equalRef = (a: string | null, b: string | null) => !!a?.trim() && !!b?.trim() && a.trim() === b.trim();
 const itemKey = (item: string | null) => item?.trim().replace(/\s+/g, " ").toLocaleLowerCase() ?? "";
 export function invoiceItemName(description: string | null): string {
-  return (description ?? "").replace(/^\s*crown\s+\d+\s*[-–—]\s*/i, "").trim();
+  return (description ?? "").replace(/^\s*crown\s+(?:\d+|n)\s*[-–—]\s*/i, "").trim();
 }
 export function reconcileInvoice(lines: { amount: number | null; type: string | null; order_no?: string | null | undefined; reference_no?: string | null | undefined; tax_amount?: number | null | undefined }[], ordersSubtotal: number | null, totals?: { sales_tax?: number | null; bill_total?: number | null }): Reconciliation {
   const items_total = lines.filter((l) => l.type === "charge").reduce((sum, l) => sum.plus(l.amount ?? 0), new Decimal(0)).toFixed(2);
@@ -99,7 +99,7 @@ export function isBilateral(description: string | null): boolean {
   return numbers.some((n) => side(n)) && numbers.some((n) => !side(n));
 }
 
-export type ItemMatch = { line_id: string; promise_id: string | null; confidence: number; quantity: number; disposition: "matched" | "included" | "not_comparable" | "no_contract" };
+export type ItemMatch = { line_id: string; promise_id: string | null; confidence: number; quantity: number; disposition: "matched" | "included" | "not_comparable" | "no_contract" | "staged" };
 export function groupInvoiceMatches(lines: Pick<ReviewedLine, "id" | "description">[], matches: ItemMatch[]) {
   const groups = new Map<string, { name: string; line_ids: string[]; match: ItemMatch }>();
   for (const m of matches.filter((m) => m.disposition === "matched")) {
@@ -116,12 +116,32 @@ export function applyGroupMatch(overrides: Record<string, string>, lineIds: stri
 }
 export const MATCH_CONFIDENCE_THRESHOLD = 0.5;
 
-// Keyword overlap between the invoice item and each comparable price-list row; best unique score wins.
+// Aliases select saved contract rows, never invent prices when a contract row is absent.
+const INVOICE_ITEM_ALIASES: Readonly<Record<string, string>> = {
+  "signature denture bundle - wax rim workflow": "Signature New Dentures & Overdentures - Wax bite rim workflow",
+  "signature denture - new denture, wax rim workflow": "Signature New Dentures & Overdentures - Wax bite rim workflow",
+  "signature denture - new denture, reference workflow": "Signature New Dentures & Overdentures - Reference workflow",
+  "monolithic try-in": "Monolithic Try-in (per arch)",
+  "zirconia monolithic": "Zirconia Monolithic",
+  "model - dual full arch": "Model: Dual Full Arch Articulated",
+};
+const aliasKey = (text: string | null) => itemKey(invoiceItemName(text)
+  .replace(/\(\s*x\s*\d+\s*\)|\bx\s*\d+\b/gi, " ").replace(/[–—]/g, "-"));
+
+// Exact aliases precede keyword overlap; best unique fuzzy score wins for other items.
 export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description" | "type"> & { amount?: number | null })[], promises: ReviewedPromise[]): ItemMatch[] {
   const candidates = promises.filter((p) => !!itemKey(p.item));
   return lines.filter((l) => l.type === "charge").map((line) => {
     const quantity = lineQuantity(line.description);
     if (line.amount === 0) return { line_id: line.id, promise_id: null, confidence: 1, quantity, disposition: "included" };
+    const staged = isStagedItem({ item: line.description, notes: null });
+    const alias = INVOICE_ITEM_ALIASES[aliasKey(line.description)];
+    if (alias) {
+      const exact = candidates.filter((p) => aliasKey(p.item) === aliasKey(alias));
+      const p = exact.length === 1 ? exact[0] : undefined;
+      return { line_id: line.id, promise_id: p?.id ?? null, confidence: p ? 1 : 0, quantity,
+        disposition: p ? isStagedItem(p) ? "staged" : isComparablePromise(p) ? "matched" : "not_comparable" : "no_contract" };
+    }
     const lineTokens = tokens(invoiceItemName(line.description));
     const bilateral = isBilateral(line.description);
     let best: ReviewedPromise | null = null;
@@ -140,8 +160,8 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
       if (score > bestScore + 1e-9) { best = p; bestScore = score; tied = false; }
       else if (Math.abs(score - bestScore) <= 1e-9 && score > 0) tied = true;
     }
-    if (tied || bestScore < MATCH_CONFIDENCE_THRESHOLD) return { line_id: line.id, promise_id: null, confidence: Math.round(bestScore * 100) / 100, quantity, disposition: "no_contract" };
-    return { line_id: line.id, promise_id: best?.id ?? null, confidence: Math.round(bestScore * 100) / 100, quantity, disposition: best && isComparablePromise(best) ? "matched" : "not_comparable" };
+    if (tied || bestScore < MATCH_CONFIDENCE_THRESHOLD) return { line_id: line.id, promise_id: null, confidence: staged ? 1 : Math.round(bestScore * 100) / 100, quantity, disposition: staged ? "staged" : "no_contract" };
+    return { line_id: line.id, promise_id: best?.id ?? null, confidence: staged ? 1 : Math.round(bestScore * 100) / 100, quantity, disposition: staged || (best && isStagedItem(best)) ? "staged" : best && isComparablePromise(best) ? "matched" : "not_comparable" };
   });
 }
 
