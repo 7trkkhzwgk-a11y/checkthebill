@@ -124,6 +124,8 @@ describe("word edits", () => {
   });
 });
 describe("staged items", () => {
+  const priceList = (item: string, amount: number | null, notes: string | null = null) => ({ id: `p-${item}`, promised_on: null, item, original_charge: null, promised_amount: amount, reference_no: null, transaction_id: null, bank_ref: null, status_text: null, source: "Lab", notes, promise_kind: "price_list" });
+  const invoiceLine = (description: string, amount: number) => ({ id: description, date: "2026-10-01", description, amount, type: "charge" as const, reference_no: null, bank_ref: null });
   it("labels staged items without flagging them, even above the agreed price", () => {
     const promises = [priceList("Partial denture", 5000)];
     const result = compareConfirmed([{ ...invoiceLine("Partial denture stage 1", 3000), order_no: "ORD-1" }], promises, "2026-10-18");
