@@ -3,11 +3,12 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { extractionSchema } from "@/lib/extraction";
 import { extractionErrorMessage } from "@/lib/extraction-errors";
 import { combineInvoicePages, maskedExtraction, readingStepError } from "@/lib/invoice-extraction";
+import { isDandyDocument } from "@/lib/dandy";
 import { z } from "zod";
 
 const documentSchema = z.object({ path: z.string().min(1), name: z.string(), mime: z.enum(["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain"]) });
 const partSchema = z.object({ file: documentSchema, sourcePath: z.string().optional(), readingId: z.string().uuid(), part: z.enum(["invoice", "price_list", "bill", "refund_promise"]), previousOrder: z.string().nullable().optional() });
-const CACHE_VERSION = "groq-v1";
+const CACHE_VERSION = "code-v1";
 
 function ownPath(path: string, userId: string) {
   if (!path.startsWith(`${userId}/`) || path.includes("..")) throw new Error("This file doesn't belong to your account.");
@@ -30,13 +31,22 @@ export const readInvoicePart = createServerFn({ method: "POST" })
       const hash = Array.from(new Uint8Array(digest), (v) => v.toString(16).padStart(2, "0")).join("");
       let output;
       let cached = false;
+      let readBy: "code" | "ai" = "ai";
       if (data.part === "price_list") {
         const existing = await context.supabase.from("price_list_cache").select("extraction").eq("user_id", context.userId).eq("content_hash", `${CACHE_VERSION}-${hash}`).maybeSingle();
         if (existing.error) throw new Error("Couldn't read the saved price list.");
         if (existing.data) { output = maskedExtraction(extractionSchema.parse(existing.data.extraction)); cached = true; }
       }
       if (!output) {
-        output = maskedExtraction(await extractInvoicePart(file, data.part, data.previousOrder ?? null, usageSink(context.supabase, context.userId, data.part, { readingId: data.readingId })));
+        // Dandy lab invoices and price lists are read by deterministic code: no AI call, no tokens.
+        const codeText = file.text && (data.part === "invoice" || data.part === "price_list") && isDandyDocument(file.text) ? file.text : null;
+        if (codeText) {
+          const { parseDandyInvoice, parseDandyPriceList } = await import("@/lib/dandy");
+          output = maskedExtraction(data.part === "invoice" ? parseDandyInvoice(codeText) : parseDandyPriceList(codeText));
+          readBy = "code";
+        } else {
+          output = maskedExtraction(await extractInvoicePart(file, data.part, data.previousOrder ?? null, usageSink(context.supabase, context.userId, data.part, { readingId: data.readingId })));
+        }
         if (data.part === "price_list") {
           const { error } = await context.supabase.from("price_list_cache").upsert({ user_id: context.userId, content_hash: `${CACHE_VERSION}-${hash}`, extraction: JSON.parse(JSON.stringify(output)), file_link: data.sourcePath ?? data.file.path }, { onConflict: "user_id,content_hash" });
           if (error) throw new Error("Couldn't save the structured price list.");
@@ -44,7 +54,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
       }
       const { error } = await context.supabase.storage.from("documents").upload(cachePath, new Blob([JSON.stringify(output)], { type: "application/json" }), { contentType: "application/json", upsert: true });
       if (error) throw new Error("Couldn't save the privately cached reading.");
-      return { ok: true as const, cachePath, lastOrder: output.bill_lines.at(-1)?.order_no ?? null, cached };
+      return { ok: true as const, cachePath, lastOrder: output.bill_lines.at(-1)?.order_no ?? null, cached, readBy };
     } catch (error) {
       const message = readingStepError(step, extractionErrorMessage(error));
       console.error("Invoice reading step failed", { step, message });
