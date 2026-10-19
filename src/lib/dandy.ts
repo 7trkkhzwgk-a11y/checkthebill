@@ -7,9 +7,11 @@ const DANDY_MARKERS = ["zimainternational", "meetdandy.com", "dandymasterpricing
 const MONEY = /(-)?\s?\$\s?(\d[\d,]*(?:\.\d{1,2})?)/g;
 const HEADER = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+Order\s*#(\d{3}-\d{3}-\d{3})\b\s*(.*)$/i;
 const NOISE = /^(?:PAGE \d+ OF \d+|Invoice|Invoice #.*\bdue\b.*|.*powered by dandy.*|.*dandy assumes.*|\* ?Credit amount is tax inclusive.*|Date Description Doctor Price Sales Tax Total)$/i;
+const SQUASHED_NOISE = [/^invoice$/i, /^invoice#/i, /^page\d+of\d+$/i, /poweredbydandy/i, /dandyassumes/i, /^\*?creditamountistaxinclusive/i, /^datedescriptiondoctorpricesalestaxtotal$/i];
 const SECTION_TITLES = /^(?:\d+\.\s|Materials$|Add-ons and modifications$|Final Implant Restorations\*?$|OEM component surcharge.*$|Plan expiration$|Refinement$|Retainers$|Extra Retainers$|Turnaround time.*$|Steps$|Description$|Plans$|Requirements$|Price$|Type$|Material$|Option$|Included$)/i;
 
-const isShortWord = (word: string) => /^[a-z]{1,2}$/i.test(word);
+const isShortWord = (word: string) => /^[a-z]{1,2}$/i.test(word) || /^[\W\d]{1,2}$/.test(word);
+const squash = (text: string) => text.replace(/\s+/g, "");
 
 /**
  * pdf.js emits letter-spaced text for these PDFs: one space inside a word, two or more between words.
@@ -29,6 +31,8 @@ export function readLine(line: string) {
     .trim();
 }
 
+const isNoise = (line: string) => NOISE.test(line) || SQUASHED_NOISE.some((pattern) => pattern.test(squash(line)));
+
 function moneyValues(text: string) {
   const found: { negative: boolean; value: number; raw: string; start: number }[] = [];
   for (const match of text.matchAll(MONEY)) {
@@ -42,13 +46,19 @@ function moneyValues(text: string) {
   return found;
 }
 
-const amountOf = (m: { negative: boolean; value: number }) => (m.negative ? -m.value : m.value);
 const magnitude = (m: { value: number }) => Math.abs(m.value);
 const printed = (m: { raw: string }) => m.raw.replace(/\s+/g, " ").trim();
 const iso = (month: string, day: string, year: string) => `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+const joinText = (pending: string, next: string) => {
+  const addition = next.trim();
+  if (!pending) return addition;
+  if (!addition) return pending;
+  // A description wrapped after a hyphen ("Chrome-" / "Cobalt") is one word, not two.
+  return /[-–—]$/.test(pending) && !/\s$/.test(pending) ? `${pending}${addition}` : `${pending} ${addition}`;
+};
 
 export function isDandyDocument(text: string) {
-  const squashed = text.replace(/\s+/g, "").toLowerCase();
+  const squashed = squash(text).toLowerCase();
   return DANDY_MARKERS.some((marker) => squashed.includes(marker));
 }
 
@@ -69,7 +79,7 @@ const line = (over: Partial<BillLine>): BillLine => ({
 export function parseDandyInvoice(text: string): Extraction {
   const out = emptyExtraction();
   out.issuer = "ZIMA INTERNATIONAL, INC.";
-  const lines = text.split(/\r?\n/).map(readLine).filter((l) => l && !NOISE.test(l));
+  const lines = text.split(/\r?\n/).map(readLine).filter((l) => l && !isNoise(l));
 
   let ordersSubtotal: number | null = null;
   let salesTax: number | null = null;
@@ -80,33 +90,22 @@ export function parseDandyInvoice(text: string): Extraction {
   let pending = "";
   let sawOrder = false;
 
-  const closeItem = (description: string, money: { negative: boolean; value: number }) => {
-    const clean = description.replace(/\s+/g, " ").trim().replace(/^[-–—]\s*/, "");
-    if (!clean) return;
-    out.bill_lines.push(line({
-      date: order?.date ?? null, description: clean, amount: magnitude(money), type: inCredits ? "credit" : "charge",
-      order_no: order?.order_no ?? null, tax_amount: inCredits ? null : order?.tax ?? null, total_amount: order?.total ?? null,
-    }));
-    pending = "";
-  };
-
   for (const raw of lines) {
     const amounts = moneyValues(raw);
     const header = raw.match(HEADER);
 
     if (header) {
-      // A new order starts; anything written before it belongs to the previous order.
       const [, month, day, year, orderNo, tail] = header;
       order = { date: iso(month, day, year), order_no: orderNo, tax: null, total: null };
+      // Lab order headings carry the doctor and status; credit headings carry the reason.
+      pending = /credit\s+for/i.test(tail ?? "") ? (tail ?? "").replace(/^[-–—]\s*/, "").trim() : "";
       inCredits = inCredits || /credit\s+for/i.test(tail ?? "");
-      pending = inCredits && /credit\s+for/i.test(tail ?? "") ? (tail ?? "").replace(/^[-–—]\s*/, "") : "";
       sawOrder = true;
-      // Column layout can print the order's own amounts on the heading line itself.
-      const onLine = amounts.filter((m) => m.start > (header.index ?? 0) + header[0].indexOf(tail ?? ""));
+      const onLine = amounts.filter((m) => m.start >= header.index! + header[0].indexOf(tail ?? ""));
       if (onLine.length >= 2) {
         const last = onLine.slice(-3);
         if (last.length === 3) { order.tax = magnitude(last[1]); order.total = magnitude(last[2]); }
-        else { order.total = magnitude(last[1]); }
+        else order.total = magnitude(last[1]);
       }
       continue;
     }
@@ -124,13 +123,23 @@ export function parseDandyInvoice(text: string): Extraction {
     if (/^Subtotal - Lab Work\b/i.test(raw) && amounts.length >= 2) { ordersSubtotal ??= amounts[0].value; salesTax ??= amounts[1].value; continue; }
     if (/^Subtotal - Credits & Refunds\b/i.test(raw) && amounts.length) { creditsPrinted ??= magnitude(amounts[0]); continue; }
 
-    if (!order) { pending = pending ? `${pending} ${raw}` : raw; continue; }
+    if (!order) { pending = joinText(pending, raw); continue; }
+
+    // Credit rows print the doctor before the amount, so only the saved reason is kept.
+    if (inCredits && amounts.length) {
+      out.bill_lines.push(line({
+        date: order.date, description: pending.replace(/^[-–—]\s*/, "").trim(), amount: magnitude(amounts[0]),
+        type: "credit", order_no: order.order_no, tax_amount: null, total_amount: magnitude(amounts[0]),
+      }));
+      pending = "";
+      continue;
+    }
 
     // The wrapped "Open Order" column prints the order's price, tax and total before any item lines.
     if (amounts.length >= 2 && order.tax === null && order.total === null) {
       const last = amounts.slice(-3);
       if (last.length === 3) { order.tax = magnitude(last[1]); order.total = magnitude(last[2]); }
-      else { order.total = magnitude(last[1]); }
+      else order.total = magnitude(last[1]);
       pending = "";
       continue;
     }
@@ -138,20 +147,17 @@ export function parseDandyInvoice(text: string): Extraction {
     if (amounts.length === 1) {
       const money = amounts[0];
       const before = raw.slice(0, money.start).replace(/\s+/g, " ").trim();
-      const description = [pending, before].filter(Boolean).join(" ");
-      if (inCredits) {
-        out.bill_lines.push(line({
-          date: order.date, description: description.replace(/^[-–—]\s*/, "").replace(/\s+/g, " ").trim(), amount: magnitude(money),
-          type: "credit", order_no: order.order_no, tax_amount: null, total_amount: magnitude(money),
-        }));
-        pending = "";
-      } else {
-        closeItem(description, money);
-      }
+      const description = joinText(pending, before).replace(/^[-–—]\s*/, "").replace(/\s+/g, " ").trim();
+      pending = "";
+      if (!description) continue;
+      out.bill_lines.push(line({
+        date: order.date, description, amount: magnitude(money), type: "charge",
+        order_no: order.order_no, tax_amount: order.tax, total_amount: order.total,
+      }));
       continue;
     }
 
-    if (amounts.length === 0) pending = pending ? `${pending} ${raw}` : raw;
+    if (amounts.length === 0) pending = joinText(pending, raw);
   }
 
   out.orders_subtotal = ordersSubtotal;
@@ -177,7 +183,7 @@ const priceRow = (over: Partial<PriceRow>): PriceRow => ({
  */
 export function parseDandyPriceList(text: string): Extraction {
   const out = emptyExtraction();
-  const lines = text.split(/\r?\n/).map(readLine).filter((l) => l && !NOISE.test(l));
+  const lines = text.split(/\r?\n/).map(readLine).filter((l) => l && !isNoise(l));
   for (const raw of lines) {
     if (SECTION_TITLES.test(raw) || raw.startsWith("*")) continue;
     const amounts = moneyValues(raw);
@@ -185,19 +191,18 @@ export function parseDandyPriceList(text: string): Extraction {
     if (!amounts.length && !hasNA) continue;
 
     const first = amounts[0];
-    let name = (first ? raw.slice(0, first.start) : raw).replace(/\s+/g, " ").trim().replace(/[:|]+$/, "").trim();
+    const name = (first ? raw.slice(0, first.start) : raw).replace(/\s+/g, " ").trim().replace(/[:|]+$/, "").trim();
     if (!name || SECTION_TITLES.test(name)) continue;
 
-    const tail = first ? raw.slice(first.start).replace(/\s+/g, " ").trim() : raw.slice(name.length).trim();
-    const prices = amounts.length;
+    const tail = (first ? raw.slice(first.start) : raw.slice(name.length)).replace(/\s+/g, " ").trim();
     const isRange = /\$\s?[\d,.]+\s?(?:-|–|—|to)\s?\$?\s?[\d,.]+/i.test(tail);
     const alloy = /\+\s*alloy/i.test(tail);
 
-    if (alloy) { out.agreed_items.push(priceRow({ item: name, promised_amount: first?.value ?? null, notes: printed({ raw: tail }) || "+ Alloy" })); continue; }
-    if (isRange) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Price range ${printed({ raw: tail })}` })); continue; }
-    if (hasNA && !amounts.length) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: "N/A – contact account manager" })); continue; }
-    if (hasNA && amounts.length && /\bN\/?A\b/i.test(tail)) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Not a fixed price (${tail})` })); continue; }
-    if (prices > 1) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Several printed prices (${tail})` })); continue; }
+    if (alloy) { out.agreed_items.push(priceRow({ item: name, promised_amount: first?.value ?? null, notes: tail || "+ Alloy" })); continue; }
+    if (isRange) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Price range ${tail}` })); continue; }
+    if (!amounts.length && hasNA) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: "N/A – contact account manager" })); continue; }
+    if (hasNA && /\bN\/?A\b/i.test(tail)) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Not a fixed price (${tail})` })); continue; }
+    if (amounts.length > 1) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Several printed prices (${tail})` })); continue; }
     if (!first) continue;
 
     const note = tail.replace(MONEY, "").replace(/\s+/g, " ").trim();
