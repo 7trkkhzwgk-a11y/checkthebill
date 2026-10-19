@@ -149,7 +149,7 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
     const alias = INVOICE_ITEM_ALIASES[aliasKey(line.description)];
     if (alias) {
       const exact = candidates.filter((p) => {
-        const leaf = aliasKey(priceListItemName(p));
+        const leaf = itemKey(priceListItemName(p).replace(/[–—]/g, "-"));
         if (/^Signature New Dentures/.test(alias)) {
           const workflow = /Wax bite rim/i.test(alias) ? "wax bite rim" : "reference";
           return leaf === aliasKey(alias) || (/Full Dentures [—–-] Signature dentures/i.test(p.item ?? "") && leaf === aliasKey(`New Dentures & Overdentures – ${workflow} workflow`));

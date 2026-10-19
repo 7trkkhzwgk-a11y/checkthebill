@@ -12,7 +12,7 @@ const SECTION_TITLES = /^(?:\d+\.\s|Materials$|Add-ons and modifications$|Final 
 const PRICE_SECTION = /^(?:Materials|Add-ons and modifications|Final Implant Restorations\*?|Implant surgery [—–-] .+|Partial Dentures [—–-] .+|Full Dentures [—–-] .+|Other removables [—–-] .+|TMJ Appliances|Sleep Apnea Appliances|Sleep Apnea Add-Ons)$/i;
 const SECTION_NOTE = /^Section: (.+?)(?:\n|$)/;
 
-export function priceListSectionCounts(rows: { item: string | null; notes?: string | null }[]) {
+export function priceListSectionCounts(rows: { item: string | null; notes?: string | null | undefined }[]) {
   const counts = new Map<string, number>();
   for (const row of rows) {
     const section = row.notes?.match(SECTION_NOTE)?.[1] ?? "Other / unsectioned";
@@ -22,7 +22,7 @@ export function priceListSectionCounts(rows: { item: string | null; notes?: stri
 }
 
 // Remove only the parser's own prefix, not meaningful words from an unprefixed contract row.
-export function priceListItemName(row: { item: string | null; notes?: string | null }) {
+export function priceListItemName(row: { item: string | null; notes?: string | null | undefined }) {
   const section = row.notes?.match(SECTION_NOTE)?.[1];
   const prefix = section ? `${section} – ` : "";
   return prefix && row.item?.startsWith(prefix) ? row.item.slice(prefix.length) : row.item ?? "";
@@ -258,7 +258,7 @@ export function parseDandyPriceList(text: string): Extraction {
       continue;
     }
     if (/^OEM component surcharge:/i.test(raw)) { const amount = moneyValues(raw)[0]; save("OEM component surcharge", amount?.value ?? null, "Per abutment"); continue; }
-    if (SECTION_TITLES.test(raw) || /^(?:Material|Type|Option)\s+(?:Price|Requirements|Custom|Free|Included)/i.test(raw)) { pending = ""; continue; }
+    if (SECTION_TITLES.test(raw) || /^(?:Material|Type|Option)\s+(?:Price|Requirements|Custom|Free|Included)/i.test(raw) || /^(?:Custom (?:Titanium|Zirconia Hybrid)|Screw-retained Ti Base)$/i.test(raw)) { pending = ""; continue; }
     const amounts = moneyValues(raw);
     const na = raw.match(/(?:^|\s)(N\/?A)(?=\s|$)/i);
     if (!amounts.length && !na) {
