@@ -141,8 +141,10 @@ describe("staged items", () => {
   it("still flags fixed-price items above the contract price in the same invoice", () => {
     const promises = [priceList("Partial denture", 5000), priceList("Crown", 1000)];
     const result = compareConfirmed([invoiceLine("Partial denture stage 1", 6000), invoiceLine("Crown", 1200)], promises, "2026-10-18");
-    expect(result.findings.find((f) => f.item === "Partial denture")?.flagged).toBe(false);
-    expect(result.findings.find((f) => f.item === "Crown")).toMatchObject({ flagged: true, overcharge: "200.00" });
+    const denture = result.findings.find((f) => f.item === "Partial denture");
+    const crown = result.findings.find((f) => f.item === "Crown");
+    expect(denture?.flagged).toBe(false);
+    expect(crown).toMatchObject({ flagged: true, overcharge: "200.00" });
     expect(result.status).toBe("flagged");
   });
 });
