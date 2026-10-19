@@ -63,7 +63,6 @@ describe("readLine", () => {
     expect(readLine("S ign a tur e   -   N e w   D en tur e ,   R efe r ence   W or kfl ow")).toBe("Signature - New Denture, Reference Workflow");
     expect(readLine("Zirconia Monolithic   $75")).toBe("Zirconia Monolithic $75");
     expect(readLine("M o de l   1   p er   o r de r   $ 20 - $ 50")).toBe("Model 1 per order $20-$50");
-    expect(readLine("Pa rt i a l   D en tur e   18,   19,   23-26,   a nd   30   -\nC h ro me - C o b a l t")).toBe("Partial Denture 18, 19, 23-26, and 30 - Chrome-Cobalt");
     expect(readLine("In v oice")).toBe("Invoice");
   });
 });
@@ -101,6 +100,16 @@ describe("parseDandyInvoice", () => {
     expect(parsed).toMatchObject({ orders_subtotal: 400, sales_tax: 36, bill_total: 416, currency: "USD", issuer: "ZIMA INTERNATIONAL, INC.", promise_kind: "price_list" });
     expect(parsed.refund).toBeNull();
     expect(parsed.agreed_items).toEqual([]);
+  });
+
+  it("joins a description wrapped after a hyphenated word and keeps a standalone dash spaced", () => {
+    const text = [
+      "01/08/2026   O r de r   #111-222-555   -   D o c t o r   T h r e e   O p en",
+      "O r de r   $ 60.00   $ 5.40   $ 65.40",
+      "P a r t ia l   D en tur e   18,   19,   23-26,   a nd   30   -",
+      "C h ro me - C o b a l t   $ 60.00",
+    ].join("\n");
+    expect(parseDandyInvoice(text).bill_lines[0]?.description).toBe("Partial Denture 18, 19, 23-26, and 30 - Chrome-Cobalt");
   });
 
   it("reconciles items, tax once per order, credits and total against the printed summary", () => {
