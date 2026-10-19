@@ -1,5 +1,9 @@
-export const READING_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
-export const WRITING_MODEL = "llama-3.3-70b-versatile";
+// Models this account can reach: text-only batches use gpt-oss-120b; images (scans, screenshots) use qwen3.8-27b.
+export const TEXT_MODEL = "openai/gpt-oss-120b";
+export const VISION_MODEL = "qwen/qwen3.8-27b";
+export function groqModelFor(content: { type: string }[]) {
+  return content.some((part) => part.type === "image_url") ? VISION_MODEL : TEXT_MODEL;
+}
 export const GROQ_MAX_RETRIES = 3;
 export function groqRetryDelay(retry: number, header: string | null) {
   const seconds = header == null ? NaN : Number(header);
