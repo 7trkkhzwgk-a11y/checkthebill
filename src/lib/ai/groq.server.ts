@@ -1,4 +1,4 @@
-import { GROQ_MAX_RETRIES, groqRetryDelay } from "@/lib/ai/groq-policy";
+import { GROQ_MAX_RETRIES, GROQ_MAX_TOKENS, GROQ_REASONING_EFFORT, groqRetryDelay } from "@/lib/ai/groq-policy";
 
 export type GroqPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 export type UsageSink = (tokens: number, model: string) => Promise<void>;
@@ -9,7 +9,7 @@ export async function groqCompletion(apiKey: string, model: string, instructions
     let response: Response;
     try { response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: instructions }, { role: "user", content }], ...(json ? { response_format: { type: "json_object" } } : {}) }),
+      body: JSON.stringify({ model, stream: false, max_tokens: GROQ_MAX_TOKENS, reasoning_effort: GROQ_REASONING_EFFORT, messages: [{ role: "system", content: instructions }, { role: "user", content }], ...(json ? { response_format: { type: "json_object" } } : {}) }),
     }); } catch {
       throw new Error("Couldn't connect to Groq. Check the GROQ_API_KEY in the secure secret form and try again.");
     }

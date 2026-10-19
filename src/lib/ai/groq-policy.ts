@@ -1,6 +1,9 @@
 // Models this account can reach: text-only batches use gpt-oss-120b; images (scans, screenshots) use qwen3.8-27b.
 export const TEXT_MODEL = "openai/gpt-oss-120b";
 export const VISION_MODEL = "qwen/qwen3.8-27b";
+// gpt-oss-120b defaults to a 3072-token answer budget, which truncates a full price list; both models accept these settings.
+export const GROQ_MAX_TOKENS = 16000;
+export const GROQ_REASONING_EFFORT = "low";
 export function groqModelFor(content: { type: string }[]) {
   return content.some((part) => part.type === "image_url") ? VISION_MODEL : TEXT_MODEL;
 }
