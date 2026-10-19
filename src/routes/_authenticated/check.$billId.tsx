@@ -187,6 +187,35 @@ function CheckPage() {
           </section>
         ))}
       </div>
+      )}
+
+      {isPriceList && !confirmed && suggestedMatches.some((m) => m.promise_id) && (
+        <>
+          <h2 className="mt-8 font-semibold">Suggested item matches</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Low-confidence matches must be confirmed before comparing.</p>
+          <div className="mt-2 space-y-2">
+            {suggestedMatches.filter((m) => m.promise_id).map((m) => {
+              const line = lines.find((l) => l.id === m.line_id);
+              const promise = proms.find((p) => p.id === (matchOverrides[m.line_id] ?? m.promise_id));
+              const low = m.confidence < 0.85;
+              return (
+                <div key={m.line_id} className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card p-3 text-sm shadow-card">
+                  <span className="min-w-0 flex-1 break-words">{line?.description ?? m.line_id}</span>
+                  <span className="text-muted-foreground">→</span>
+                  <select
+                    className="h-8 max-w-64 rounded-md border border-input bg-background px-2 text-xs"
+                    value={matchOverrides[m.line_id] ?? m.promise_id ?? ""}
+                    onChange={(e) => setMatchOverrides((prev) => ({ ...prev, [m.line_id]: e.target.value }))}
+                  >
+                    {proms.filter(isComparablePromise).map((p) => <option key={p.id} value={p.id}>{p.item}</option>)}
+                  </select>
+                  <span className={`font-mono text-xs ${low ? "text-destructive" : "text-success"}`}>{Math.round(m.confidence * 100)}%{low && !matchOverrides[m.line_id] ? " — confirm" : ""}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {confirmed ? (
         <div className="mt-8 space-y-4"><p className="flex items-center gap-2 font-medium text-success"><CheckCircle2 className="h-5 w-5" /> Lines confirmed</p><Button variant="signal" disabled={saving} onClick={looksRight}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}View result</Button></div>
