@@ -6,7 +6,7 @@ import { extractionErrorMessage, MAX_DOCUMENT_BYTES, validateDocumentSize } from
 const mock = vi.hoisted(() => ({ streamText: vi.fn(), responses: vi.fn(() => "model") }));
 vi.mock("ai", async (original) => ({ ...await original<typeof import("ai")>(), streamText: mock.streamText }));
 vi.mock("@ai-sdk/openai", () => ({ createOpenAI: () => ({ responses: mock.responses }) }));
-import { extractLines, EXTRACTION_INSTRUCTION } from "@/lib/extract.server";
+import { extractLines, extractInvoicePart, EXTRACTION_INSTRUCTION } from "@/lib/extract.server";
 
 beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("LOVABLE_API_KEY", "test-only"); });
 
@@ -54,6 +54,20 @@ describe("complete extraction request", () => {
     await expect(extractLines({ name: "b.png", mime: "image/png", base64: "Yg==" }, { name: "p.png", mime: "image/png", base64: "cA==" })).rejects.toThrow("temporarily rate limited");
     expect(mock.streamText.mock.calls[0]?.[0].maxRetries).toBe(0);
     vi.restoreAllMocks();
+  });
+
+  it("reads the price list separately and preserves the final order context for a continued invoice page", async () => {
+    mock.streamText.mockImplementation(() => ({ consumeStream: async () => {}, output: Promise.resolve({}) }));
+    const file = { name: "synthetic.pdf", mime: "application/pdf", base64: "cGRm" };
+    await extractInvoicePart(file, "price_list");
+    const price = mock.streamText.mock.calls[0]?.[0];
+    expect(price.messages[0].content.filter((p: { type: string }) => p.type === "file")).toHaveLength(1);
+    expect(price.instructions).toContain("only the PROMISE contract/price list");
+    await extractInvoicePart(file, "invoice", "SYN-ORDER-A");
+    const invoice = mock.streamText.mock.calls[1]?.[0];
+    expect(invoice.instructions).toContain('"SYN-ORDER-A"');
+    expect(invoice.instructions).toContain(EXTRACTION_INSTRUCTION);
+    expect(invoice.maxRetries).toBe(0);
   });
 });
 

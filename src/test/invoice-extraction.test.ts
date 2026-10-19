@@ -1,4 +1,3 @@
-// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { File as NodeFile } from "node:buffer";
 import { PDFDocument } from "pdf-lib";
@@ -19,7 +18,7 @@ describe("invoice page reading", () => {
     const pages = await splitInvoicePdf(file);
     expect(pages).toHaveLength(10);
     for (const [i, page] of pages.entries()) {
-      const read = await PDFDocument.load(await page.arrayBuffer());
+      const read = await PDFDocument.load(new Uint8Array(await page.arrayBuffer()));
       expect(read.getPageCount()).toBe(1);
       expect(read.getPage(0).getWidth()).toBe(300 + i);
     }

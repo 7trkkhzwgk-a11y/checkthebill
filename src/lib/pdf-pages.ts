@@ -3,7 +3,7 @@ import { PDFDocument } from "pdf-lib";
 // Local file manipulation only. No document interpretation or AI runs here.
 export async function splitInvoicePdf(file: File): Promise<File[]> {
   if (file.type !== "application/pdf") return [file];
-  const source = await PDFDocument.load(await file.arrayBuffer());
+  const source = await PDFDocument.load(new Uint8Array(await file.arrayBuffer()));
   const files: File[] = [];
   for (const index of source.getPageIndices()) {
     const page = await PDFDocument.create();
