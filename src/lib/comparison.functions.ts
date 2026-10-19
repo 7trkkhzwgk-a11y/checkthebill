@@ -12,6 +12,7 @@ const confirmationInput = billInput.extend({
   issuer: z.string().max(2000).nullable(), billTotal: z.number().finite().nonnegative().nullable(),
   currency: z.string().regex(/^[A-Z]{3}$/).nullable().optional(),
   lines: z.array(reviewedLineSchema).max(1000), promises: z.array(reviewedPromiseSchema).max(1000),
+  confirmedMatches: z.record(z.string().uuid(), z.string().uuid()).optional(),
 });
 
 export const confirmCheck = createServerFn({ method: "POST" })
@@ -42,7 +43,7 @@ export const confirmCheck = createServerFn({ method: "POST" })
       if (error) throw new Error("Couldn't save the confirmed promise.");
     }
     const today = new Date().toISOString().slice(0, 10);
-    const comparison = compareConfirmed(lines, promises, today, { orders_subtotal: b.data.orders_subtotal ?? null, sales_tax: b.data.sales_tax ?? null });
+    const comparison = compareConfirmed(lines, promises, today, { orders_subtotal: b.data.orders_subtotal ?? null, sales_tax: b.data.sales_tax ?? null, confirmed_matches: data.confirmedMatches });
     comparison.findings = comparison.findings.map((f) => presentFinding(f, promises.find((p) => p.id === f.promise_id), maskSensitive(data.issuer), currencyCode(data.currency)));
     const flaggedIds = [...new Set(comparison.findings.filter((f) => f.flagged && f.line_id).map((f) => f.line_id))];
     for (const id of flaggedIds) {

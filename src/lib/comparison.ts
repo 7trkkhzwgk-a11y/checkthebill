@@ -96,7 +96,8 @@ export function matchInvoiceItems(lines: Pick<ReviewedLine, "id" | "description"
 }
 
 // Invoked only at the authenticated server confirmation boundary; AI never computes these values.
-export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string, billTotals?: { orders_subtotal: number | null; sales_tax: number | null }): Comparison {
+export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string, options?: { orders_subtotal?: number | null; sales_tax?: number | null; confirmed_matches?: Record<string, string> }): Comparison {
+  const billTotals = { orders_subtotal: options?.orders_subtotal ?? null, sales_tax: options?.sales_tax ?? null };
   if (!toDate(today)) throw new Error("Invalid comparison date.");
   const findings: Finding[] = [];
   const issues: string[] = [];
@@ -155,7 +156,9 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     const matches = matchInvoiceItems(lines, agreed);
     for (const line of lines.filter((l) => l.type === "charge")) {
       const match = matches.find((m) => m.line_id === line.id);
-      const p = match?.promise_id ? agreed.find((candidate) => candidate.id === match.promise_id) : undefined;
+      const override = options?.confirmed_matches?.[line.id];
+      const chosenId = override ?? match?.promise_id ?? null;
+      const p = chosenId ? agreed.find((candidate) => candidate.id === chosenId) : undefined;
       if (!p) { issues.push(`No comparable agreed price confidently matches invoice line ${line.id}. Review the match on the confirmation screen.`); continue; }
       const f = base(p, "invoice");
       f.line_id = line.id;
