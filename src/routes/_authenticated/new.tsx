@@ -7,6 +7,13 @@ import { Button } from "@/components/ui/button";
 import { extractionErrorMessage, validateDocumentSize } from "@/lib/extraction-errors";
 import { readInvoicePart, finishInvoiceReading } from "@/lib/invoice-reading.functions";
 import { readingStepError } from "@/lib/invoice-extraction";
+import { isDandyDocument } from "@/lib/dandy";
+
+// Code-readable documents are handed over whole, so a line wrapped across a page break is never lost.
+async function combinedText(batches: { file: File }[]) {
+  if (!batches.length || batches.some((b) => b.file.type !== "text/plain")) return null;
+  return (await Promise.all(batches.map((b) => b.file.text()))).join("\n");
+}
 
 export const Route = createFileRoute("/_authenticated/new")({
   head: () => ({
@@ -78,24 +85,44 @@ function NewCheck() {
       const temporary: string[] = [];
       try {
         const promiseBatches = await prepareDocument(promise);
-        for (const batch of promiseBatches) {
-          step = `Reading promise page ${batch.first} of ${batch.total}`;
-          setBusy(`${step}…`);
-          const file = await upload(batch.file, "promise-batch"); temporary.push(file.path);
-          const result = await readPart({ data: { file, sourcePath: p.path, part: billType === "lab_invoice" ? "price_list" : "refund_promise", readingId } });
+        const promiseText = billType === "lab_invoice" ? await combinedText(promiseBatches) : null;
+        if (promiseText && isDandyDocument(promiseText)) {
+          step = "Reading price list with code";
+          setBusy("Reading price list with code…");
+          const file = await upload(new File([promiseText], "price-list.txt", { type: "text/plain" }), "promise-text"); temporary.push(file.path);
+          const result = await readPart({ data: { file, sourcePath: p.path, part: "price_list", readingId } });
           if (!result.ok) throw new Error(result.error);
           pricePaths.push(result.cachePath);
+        } else {
+          for (const batch of promiseBatches) {
+            step = `Reading promise page ${batch.first} of ${batch.total}`;
+            setBusy(`${step}…`);
+            const file = await upload(batch.file, "promise-batch"); temporary.push(file.path);
+            const result = await readPart({ data: { file, sourcePath: p.path, part: billType === "lab_invoice" ? "price_list" : "refund_promise", readingId } });
+            if (!result.ok) throw new Error(result.error);
+            pricePaths.push(result.cachePath);
+          }
         }
         let previousOrder: string | null = null;
         const invoiceBatches = await prepareDocument(bill);
-        for (const batch of invoiceBatches) {
-          step = `Reading page ${batch.first} of ${batch.total}`;
-          setBusy(`${step}…`);
-          const file = await upload(batch.file, "bill-batch"); temporary.push(file.path);
-          const result = await readPart({ data: { file, part: billType === "lab_invoice" ? "invoice" : "bill", previousOrder, readingId } });
+        const billText = billType === "lab_invoice" ? await combinedText(invoiceBatches) : null;
+        if (billText && isDandyDocument(billText)) {
+          step = "Reading invoice with code";
+          setBusy("Reading invoice with code…");
+          const file = await upload(new File([billText], "invoice.txt", { type: "text/plain" }), "bill-text"); temporary.push(file.path);
+          const result = await readPart({ data: { file, part: "invoice", readingId } });
           if (!result.ok) throw new Error(result.error);
           pages.push(result.cachePath);
-          previousOrder = result.lastOrder ?? previousOrder;
+        } else {
+          for (const batch of invoiceBatches) {
+            step = `Reading page ${batch.first} of ${batch.total}`;
+            setBusy(`${step}…`);
+            const file = await upload(batch.file, "bill-batch"); temporary.push(file.path);
+            const result = await readPart({ data: { file, part: billType === "lab_invoice" ? "invoice" : "bill", previousOrder, readingId } });
+            if (!result.ok) throw new Error(result.error);
+            pages.push(result.cachePath);
+            previousOrder = result.lastOrder ?? previousOrder;
+          }
         }
         step = "Combining and saving check";
         setBusy("Combining and saving check…");
