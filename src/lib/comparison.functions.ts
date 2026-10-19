@@ -63,7 +63,7 @@ export const getCheckResult = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const [b, l, p] = await Promise.all([
-      supabase.from("bills").select("id,issuer,currency,confirmed_at,comparison_result").eq("id", data.billId).eq("user_id", userId).single(),
+      supabase.from("bills").select("id,issuer,currency,confirmed_at,comparison_result,bill_type").eq("id", data.billId).eq("user_id", userId).single(),
       supabase.from("line_items").select("id,date,description,amount,type,reference_no,flagged,flag_reason").eq("bill_id", data.billId).eq("user_id", userId).order("date"),
       supabase.from("promises").select("id,source,item,pnr").eq("bill_id", data.billId).eq("user_id", userId),
     ]);

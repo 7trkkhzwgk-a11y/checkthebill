@@ -44,6 +44,7 @@ function NewCheck() {
   const [bill, setBill] = useState<File | null>(null);
   const [promise, setPromise] = useState<File | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [billType, setBillType] = useState<"refund" | "lab_invoice">("refund");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   async function upload(f: File, kind: string) {
