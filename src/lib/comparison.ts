@@ -40,7 +40,7 @@ const itemKey = (item: string | null) => item?.trim().replace(/\s+/g, " ").toLoc
 export function invoiceItemName(description: string | null): string {
   return (description ?? "").replace(/^\s*crown\s+\d+\s*[-–—]\s*/i, "").trim();
 }
-export function reconcileInvoice(lines: { amount: number | null; type: string | null; order_no?: string | null; reference_no?: string | null; tax_amount?: number | null }[], ordersSubtotal: number | null, totals?: { sales_tax?: number | null; bill_total?: number | null }): Reconciliation {
+export function reconcileInvoice(lines: { amount: number | null; type: string | null; order_no?: string | null | undefined; reference_no?: string | null | undefined; tax_amount?: number | null | undefined }[], ordersSubtotal: number | null, totals?: { sales_tax?: number | null; bill_total?: number | null }): Reconciliation {
   const items_total = lines.filter((l) => l.type === "charge").reduce((sum, l) => sum.plus(l.amount ?? 0), new Decimal(0)).toFixed(2);
   const result: Reconciliation = { items_total, orders_subtotal: ordersSubtotal === null ? null : money(ordersSubtotal), matches: ordersSubtotal === null || lines.some((l) => l.type === "charge" && l.amount === null) ? null : new Decimal(items_total).eq(ordersSubtotal) };
   if (!totals) return result;
