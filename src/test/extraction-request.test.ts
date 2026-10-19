@@ -29,14 +29,17 @@ describe("complete extraction request", () => {
     expect(extractionOutputSchema.shape.refund.unwrap().shape.pnr.isNullable()).toBe(true);
   });
 
-  it("sends image data and code-extracted PDF text using Scout, never raw PDFs", async () => {
+  it("sends image data to the vision model and code-extracted PDF text to the text model, never raw PDFs", async () => {
     mock.completion.mockResolvedValue(JSON.stringify(complete));
     expect(await extractLines({ name: "bill.png", mime: "image/png", base64: "aW1hZ2U=" }, { name: "promise.txt", mime: "text/plain", text: "Synthetic contract text" })).toEqual(complete);
     const call = mock.completion.mock.calls[0];
-    expect(call?.[1]).toBe("meta-llama/llama-4-scout-17b-16e-instruct");
+    expect(call?.[1]).toBe("qwen/qwen3.8-27b");
     expect(call?.[2]).toContain(EXTRACTION_INSTRUCTION);
     expect(call?.[3][1]).toEqual({ type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } });
     expect(call?.[3][3]).toEqual({ type: "text", text: "Synthetic contract text" });
+    mock.completion.mockResolvedValue(JSON.stringify(complete));
+    await extractLines({ name: "bill.txt", mime: "text/plain", text: "Synthetic statement text" }, { name: "promise.txt", mime: "text/plain", text: "Synthetic contract text" });
+    expect(mock.completion.mock.calls[1]?.[1]).toBe("openai/gpt-oss-120b");
   });
   it("does not hide exhausted rate limits behind JSON validation", async () => {
     mock.completion.mockRejectedValue(new Error("Busy – try again in a minute"));
