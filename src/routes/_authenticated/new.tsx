@@ -64,7 +64,7 @@ function NewCheck() {
       setBusy("Uploading privately…");
       const [b, p] = await Promise.all([upload(bill, "bill"), upload(promise, "promise")]);
       setBusy("Reading every line…");
-      const { billId } = await extract({ data: { bill: b, promise: p } });
+      const { billId } = await extract({ data: { bill: b, promise: p, billType } });
       navigate({ to: "/check/$billId", params: { billId } });
     } catch (e) {
       setErrorMessage(extractionErrorMessage(e));
@@ -77,6 +77,23 @@ function NewCheck() {
       <h1 className="text-3xl font-bold">New check</h1>
 <p className="mt-2 text-muted-foreground">Files are stored privately. Only you can see them.</p>
       <p className="mt-1 text-sm text-muted-foreground">Remove patient names before uploading.</p>
+      <fieldset className="mt-6">
+        <legend className="font-mono text-xs uppercase tracking-[0.2em] text-muted-foreground">Bill type</legend>
+        <div className="mt-2 flex gap-2" role="radiogroup" aria-label="Bill type">
+          {([["refund", "Refund"], ["lab_invoice", "Lab/vendor invoice"]] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={billType === value}
+              onClick={() => setBillType(value)}
+              className={`rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${billType === value ? "border-accent bg-accent/10 text-foreground" : "border-input bg-card text-muted-foreground hover:border-accent"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         <Drop label="Bill" hint="Card statement or vendor invoice" file={bill} onFile={setBill} />
         <Drop label="Promise" hint="Refund confirmation, contract or agreed price list" file={promise} onFile={setPromise} />
