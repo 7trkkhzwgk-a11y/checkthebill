@@ -17,6 +17,7 @@ export type Database = {
       bills: {
         Row: {
           bill_total: number | null
+          bill_type: string
           comparison_result: Json | null
           confirmed_at: string | null
           currency: string | null
@@ -30,6 +31,7 @@ export type Database = {
         }
         Insert: {
           bill_total?: number | null
+          bill_type?: string
           comparison_result?: Json | null
           confirmed_at?: string | null
           currency?: string | null
@@ -43,6 +45,7 @@ export type Database = {
         }
         Update: {
           bill_total?: number | null
+          bill_type?: string
           comparison_result?: Json | null
           confirmed_at?: string | null
           currency?: string | null
