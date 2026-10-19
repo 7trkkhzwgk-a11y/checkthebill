@@ -69,6 +69,7 @@ function CheckPage() {
     setProms((ps) => ps.map((x, j) => (j === i ? { ...x, [k]: k === "promised_amount" || k === "original_charge" ? (v === "" ? null : Number(v)) : k === "bank_ref" ? v : v || null } : x)));
 
   async function looksRight() {
+    if (unconfirmedLow.length) { toast.error("Confirm each low-confidence item match before continuing."); return; }
     setSaving(true);
     try {
       const validLines = lines.map((line) => {
