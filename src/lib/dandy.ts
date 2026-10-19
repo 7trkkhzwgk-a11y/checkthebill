@@ -11,6 +11,15 @@ const SQUASHED_NOISE = [/^invoice$/i, /^invoice#/i, /^page\d+of\d+$/i, /poweredb
 const SECTION_TITLES = /^(?:\d+\.\s|Materials$|Add-ons and modifications$|Final Implant Restorations\*?$|OEM component surcharge.*$|Plan expiration$|Refinement$|Retainers$|Extra Retainers$|Turnaround time.*$|Steps$|Description$|Plans$|Requirements$|Price$|Type$|Material$|Option$|Included$)/i;
 
 const isShortWord = (word: string) => /^[a-z]{1,2}$/i.test(word) || /^[\W\d]{1,2}$/.test(word);
+
+/** True when a fragment is a letter-spaced word ("R efe r ence") rather than a printed phrase ("1 per order"). */
+function isSpacedFragment(words: string[]) {
+  if (words.length < 2) return false;
+  if (words.filter(isShortWord).length / words.length >= 0.6) return true;
+  if (!/^[a-z]$/i.test(words[0])) return false;
+  const rest = words.slice(1);
+  return rest.every((w) => w.length <= 4) && (rest.length >= 2 || rest[0].length <= 3);
+}
 const squash = (text: string) => text.replace(/\s+/g, "");
 
 /**
@@ -23,8 +32,7 @@ export function readLine(line: string) {
     .split(/\s{2,}/)
     .map((token) => {
       const words = token.split(" ");
-      if (words.length >= 2 && words.filter(isShortWord).length / words.length >= 0.6) return words.join("");
-      return token;
+      return isSpacedFragment(words) ? words.join("") : token;
     })
     .join(" ")
     .replace(/\s+/g, " ")

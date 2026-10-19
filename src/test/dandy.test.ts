@@ -60,7 +60,9 @@ describe("Dandy document detection", () => {
 describe("readLine", () => {
   it("re-joins letter-spaced words and leaves printed numbers alone", () => {
     expect(readLine("Pa rt i a l   D en tur e   4,   5,   a nd   13   -   C h ro me -")).toBe("Partial Denture 4, 5, and 13 - Chrome-");
+    expect(readLine("S ign a tur e   -   N e w   D en tur e ,   R efe r ence   W or kfl ow")).toBe("Signature - New Denture, Reference Workflow");
     expect(readLine("Zirconia Monolithic   $75")).toBe("Zirconia Monolithic $75");
+    expect(readLine("M o de l   1   p er   o r de r   $ 20 - $ 50")).toBe("Model 1 per order $ 20 - $ 50");
     expect(readLine("In v oice")).toBe("Invoice");
   });
 });
