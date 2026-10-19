@@ -16,9 +16,9 @@ const isShortWord = (word: string) => /^[a-z]{1,2}$/i.test(word) || /^[\W\d]{1,2
 function isSpacedFragment(words: string[]) {
   if (words.length < 2) return false;
   if (words.filter(isShortWord).length / words.length >= 0.6) return true;
-  if (!/^[a-z]$/i.test(words[0])) return false;
+  if (!/^[a-z]$/i.test(words[0] ?? "")) return false;
   const rest = words.slice(1);
-  return rest.every((w) => w.length <= 4) && (rest.length >= 2 || rest[0].length <= 3);
+  return rest.every((w) => w.length <= 4) && (rest.length >= 2 || (rest[0]?.length ?? 0) <= 3);
 }
 const squash = (text: string) => text.replace(/\s+/g, "");
 
@@ -49,7 +49,9 @@ function moneyValues(text: string) {
     // A dash only means "negative" when it stands alone, not when it joins words ("29-31", "Chrome-").
     const before = text.slice(0, at).replace(/\s-$/, "").slice(-1);
     const negative = dash && !/[\w-]/.test(before);
-    found.push({ negative, value: Number(match[2].replace(/,/g, "")), raw: match[0], start: at });
+    const digits = match[2];
+    if (!digits) continue;
+    found.push({ negative, value: Number(digits.replace(/,/g, "")), raw: match[0], start: at });
   }
   return found;
 }
@@ -105,6 +107,7 @@ export function parseDandyInvoice(text: string): Extraction {
 
     if (header) {
       const [, month, day, year, orderNo, tail] = header;
+      if (!month || !day || !year || !orderNo) continue;
       order = { date: iso(month, day, year), order_no: orderNo, tax: null, total: null };
       // Lab order headings carry the doctor and status; credit headings carry the reason.
       pending = /credit\s+for/i.test(tail ?? "") ? (tail ?? "").replace(/^[-–—]\s*/, "").trim() : "";

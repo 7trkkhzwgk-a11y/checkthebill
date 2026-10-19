@@ -27,14 +27,16 @@ describe("fixed invoice aliases", () => {
     const rows = [line("Signature Denture Bundle - Wax Rim Workflow (x2)", 398)];
     expect(matchInvoiceItems(rows, promises)[0]).toMatchObject({ promise_id: wax, quantity: 2, confidence: 1 });
     expect(compareConfirmed(rows, promises, "2026-10-19").findings[0]).toMatchObject({ promised: "398.00", overcharge: "0.00", flagged: false });
-    expect(compareConfirmed([{ ...rows[0], amount: 400 } as ReviewedLine], promises, "2026-10-19").findings[0]).toMatchObject({ overcharge: "2.00", flagged: true });
+    expect(compareConfirmed([line("Signature Denture Bundle - Wax Rim Workflow (x2)", 400)], promises, "2026-10-19").findings[0]).toMatchObject({ overcharge: "2.00", flagged: true });
   });
   it("keeps zero-dollar removable models included without confirmation", () => {
     const rows = [line("Removable Model - Dual Full Arch", 0)];
     const matches = matchInvoiceItems(rows, promises);
     expect(matches[0]).toMatchObject({ disposition: "included", promise_id: null });
     expect(groupInvoiceMatches(rows, matches)).toEqual([]);
-    expect(invoiceBucket(compareConfirmed(rows, promises, "2026-10-19").findings[0] as NonNullable<ReturnType<typeof compareConfirmed>["findings"][number]>)).toBe("included");
+    const finding = compareConfirmed(rows, promises, "2026-10-19").findings[0];
+    if (!finding) throw new Error("Missing included finding");
+    expect(invoiceBucket(finding)).toBe("included");
   });
   it.each(["Partial Denture - Chrome-Cobalt", "Partial Denture - Acrylic", "Partial Denture - Flexible"])("keeps %s staged without confirmation or comparison", (name) => {
     const rows = [line(name, 500)];
