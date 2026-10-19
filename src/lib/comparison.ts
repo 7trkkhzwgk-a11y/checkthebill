@@ -40,7 +40,7 @@ const itemKey = (item: string | null) => item?.trim().replace(/\s+/g, " ").toLoc
 export function invoiceItemName(description: string | null): string {
   return (description ?? "").replace(/^\s*crown\s+\d+\s*[-–—]\s*/i, "").trim();
 }
-export function reconcileInvoice(lines: Pick<ReviewedLine, "amount" | "type">[], ordersSubtotal: number | null): Reconciliation {
+export function reconcileInvoice(lines: { amount: number | null; type: string | null }[], ordersSubtotal: number | null): Reconciliation {
   const items_total = lines.filter((l) => l.type === "charge").reduce((sum, l) => sum.plus(l.amount ?? 0), new Decimal(0)).toFixed(2);
   return { items_total, orders_subtotal: ordersSubtotal === null ? null : money(ordersSubtotal), matches: ordersSubtotal === null || lines.some((l) => l.type === "charge" && l.amount === null) ? null : new Decimal(items_total).eq(ordersSubtotal) };
 }
@@ -109,6 +109,7 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
     let tied = false;
     for (const p of candidates) {
       const promiseTokens = tokens(p.item);
+      if (lineTokens.includes("additional") && !promiseTokens.includes("additional")) continue;
       const overlap = lineTokens.filter((t) => promiseTokens.some((pt) => pt === t || pt.startsWith(t) || t.startsWith(pt))).length;
       let score = lineTokens.length ? overlap / lineTokens.length : 0;
       if (/bilateral|unilateral/i.test(p.item ?? "")) {

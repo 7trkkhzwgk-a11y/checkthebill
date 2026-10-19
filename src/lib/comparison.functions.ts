@@ -63,8 +63,8 @@ export const getCheckResult = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const [b, l, p] = await Promise.all([
-      supabase.from("bills").select("id,issuer,currency,confirmed_at,comparison_result,bill_type").eq("id", data.billId).eq("user_id", userId).single(),
-      supabase.from("line_items").select("id,date,description,amount,type,reference_no,flagged,flag_reason").eq("bill_id", data.billId).eq("user_id", userId).order("date"),
+      supabase.from("bills").select("id,issuer,currency,confirmed_at,comparison_result,bill_type,orders_subtotal").eq("id", data.billId).eq("user_id", userId).single(),
+      supabase.from("line_items").select("id,date,description,amount,type,reference_no,order_no,flagged,flag_reason").eq("bill_id", data.billId).eq("user_id", userId).order("date"),
       supabase.from("promises").select("id,source,item,pnr").eq("bill_id", data.billId).eq("user_id", userId),
     ]);
     if (b.error || !b.data || l.error || p.error) throw new Error("Couldn't load this check.");
@@ -165,7 +165,7 @@ export const saveMessageDecision = createServerFn({ method: "POST" })
     const bill = await supabase.from("bills").select("comparison_result").eq("id", line.data.bill_id).eq("user_id", userId).single();
     if (bill.error || !bill.data) throw new Error("Couldn't find the message check.");
     const comparison = bill.data.comparison_result as unknown as Comparison | null;
-    const identifiers = comparison?.findings.filter((f) => f.line_id === message.line_id).flatMap((f) => [f.refund_id, f.transaction_id, f.bank_ref, f.pnr ?? null]) ?? [];
+    const identifiers = comparison?.findings.filter((f) => f.line_id === message.line_id).flatMap((f) => [f.refund_id, f.transaction_id, f.bank_ref, f.pnr ?? null, f.order_no ?? null]) ?? [];
     const final_text = maskWithIdentifiers(data.finalText, identifiers);
     const words_changed = countWordsChanged(message.draft_text ?? "", final_text);
     const { error: saveError } = await supabase.from("messages").update({ final_text, words_changed, sent: data.decision === "sent", sent_at: data.decision === "sent" ? new Date().toISOString() : null, declined_at: data.decision === "not_sending" ? new Date().toISOString() : null }).eq("id", data.messageId).eq("user_id", userId);

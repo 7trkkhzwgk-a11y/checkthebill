@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareConfirmed, countWordsChanged, draftFacts, isBilateral, isComparablePromise, lineQuantity, matchInvoiceItems, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
+import { compareConfirmed, countWordsChanged, draftFacts, groupInvoiceMatches, applyGroupMatch, reconcileInvoice, isBilateral, isComparablePromise, lineQuantity, matchInvoiceItems, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
 
 const charge: ReviewedLine = { id: "charge", date: "2026-10-01", description: "Train ticket", amount: 7475.40, type: "charge", reference_no: "9876543210987654", bank_ref: null };
 const refund: ReviewedPromise = { id: "promise", item: "Train ticket refund", original_charge: 7475.40, promised_amount: 7180.00, reference_no: "1234567890123456", transaction_id: "9876543210987654", bank_ref: "", promised_on: "2026-10-08", status_text: "Refund amount has been sent", source: "Refund confirmation", promise_kind: "refund" };
@@ -121,6 +121,44 @@ describe("word edits", () => {
     expect(countWordsChanged("Please send refund", "Please send my refund soon")).toBe(2);
     expect(countWordsChanged("Please send my refund", "Please send refund")).toBe(1);
     expect(countWordsChanged("Please send refund", "Please send refund")).toBe(0);
+  });
+});
+describe("lab invoice review rules", () => {
+  const p: ReviewedPromise = { ...refund, id: "material", item: "Zirconia", promised_amount: 100, original_charge: null, transaction_id: null, promise_kind: "price_list" };
+  const l: ReviewedLine = { ...charge, id: "crown", description: "Crown 14 - Zirconia", amount: 120, order_no: "100006792070399" };
+  it("carries the full order number into findings and message facts", () => {
+    const f = compareConfirmed([l], [p], "2026-10-19").findings[0];
+    expect(f?.order_no).toBe("100006792070399");
+    if (!f) throw new Error("Missing finding");
+    expect(draftFacts(f)).toMatchObject({ order_no: "100006792070399", item: "Crown 14 - Zirconia" });
+  });
+  it("includes zero-dollar bundle items without matching or flagging", () => {
+    const lines = [{ ...l, description: "Removable Model", amount: 0 }, { ...l, id: "try-in", description: "Monolithic Try-in", amount: 0 }];
+    expect(matchInvoiceItems(lines, [p]).every((m) => m.disposition === "included" && m.promise_id === null)).toBe(true);
+    expect(groupInvoiceMatches(lines, matchInvoiceItems(lines, [p]))).toEqual([]);
+    const result = compareConfirmed(lines, [p], "2026-10-19");
+    expect(result.findings.map((f) => [f.flagged, f.note])).toEqual([[false, "Included – $0"], [false, "Included – $0"]]);
+    expect(result.status).toBe("clear");
+  });
+  it("groups distinct tooth-number crowns by material and confirms all lines once", () => {
+    const lines = [l, { ...l, id: "crown2", description: "Crown 24 - Zirconia" }];
+    const groups = groupInvoiceMatches(lines, matchInvoiceItems(lines, [p]));
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.line_ids).toEqual(["crown", "crown2"]);
+    expect(applyGroupMatch({}, groups[0]?.line_ids ?? [], "material")).toEqual({ crown: "material", crown2: "material" });
+  });
+  it("matches Crown N - material with high confidence without tooth numbers", () => {
+    expect(matchInvoiceItems([l], [p])[0]).toMatchObject({ promise_id: "material", confidence: 1 });
+  });
+  it("retains Additional Wax Rim as a review finding when no contract entry exists", () => {
+    expect(compareConfirmed([{ ...l, description: "Additional Wax Rim" }], [p, { ...p, id: "wax", item: "Signature denture wax bite rim workflow" }], "2026-10-19").findings[0]).toMatchObject({ line_id: "crown", disposition: "no_contract", note: "No contract price – review", flagged: false, charged: "120.00" });
+  });
+  it("labels matching non-fixed contract prices not comparable", () => {
+    expect(compareConfirmed([l], [{ ...p, item: "Zirconia + Alloy" }], "2026-10-19").findings[0]).toMatchObject({ disposition: "not_comparable", flagged: false, note: "Not comparable" });
+  });
+  it("reconciles item totals against printed Orders 10502 exactly", () => {
+    expect(reconcileInvoice([{ ...l, amount: 10000 }, { ...l, amount: 502 }], 10502)).toEqual({ items_total: "10502.00", orders_subtotal: "10502.00", matches: true });
+    expect(reconcileInvoice([l], 10502).matches).toBe(false);
   });
 });
 describe("staged items", () => {

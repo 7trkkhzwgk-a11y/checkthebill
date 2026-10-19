@@ -5,6 +5,13 @@ const refund = { item: "Train ticket refund", original_charge: 7475.40, promised
 const base: Extraction = { issuer: "Rail", source: "Refund confirmation", bill_total: 7475.40, bill_lines: [], promise_kind: "refund", refund, agreed_items: [] };
 
 describe("extraction normalization", () => {
+  it("keeps order numbers on every invoice item, including included zero-dollar lines", () => {
+    const result = normalizeExtraction({ ...base, promise_kind: "price_list", refund: null, bill_lines: [
+      { kind: "transaction", date: null, description: "Removable Model", amount: 0, type: "charge", reference_no: null, bank_ref: null, order_no: "100006792070399" },
+      { kind: "transaction", date: null, description: "Crown 14 - Zirconia", amount: 120, type: "charge", reference_no: null, bank_ref: null, order_no: "100006792070400" },
+    ] });
+    expect(result.bill_lines.map((l) => [l.order_no, l.amount])).toEqual([["100006792070399", 0], ["100006792070400", 120]]);
+  });
   it("retains printed currency and the complete PNR", () => {
     expect(normalizeExtraction({ ...base, currency: "INR", refund: { ...refund, pnr: "1234567890123456" } })).toMatchObject({ currency: "INR", promise_rows: [expect.objectContaining({ pnr: "1234567890123456" })] });
   });
