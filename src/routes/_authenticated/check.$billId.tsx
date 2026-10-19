@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { confirmCheck, generateCheckDrafts } from "@/lib/comparison.functions";
-import { matchInvoiceItems, groupInvoiceMatches, applyGroupMatch, reconcileInvoice, isComparablePromise, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
+import { matchInvoiceItems, groupInvoiceMatches, applyGroupMatch, reconcileInvoice, isComparablePromise, closestPriceListNames, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
+import { priceListSectionCounts } from "@/lib/dandy";
 
 import { formatCurrency } from "@/lib/message-format";
 
@@ -150,6 +151,7 @@ function CheckPage() {
       </div>
 
       <h2 className="mt-8 font-semibold">Promise</h2>
+      {isPriceList && <section className="mt-3 border-y border-border py-4" aria-label="Saved price-list sections"><h3 className="text-sm font-semibold">Price list · {proms.length} rows saved</h3><dl className="mt-3 grid gap-2 sm:grid-cols-2">{priceListSectionCounts(proms).map(({ section, count }) => <div key={section} className="flex min-w-0 justify-between gap-3 text-xs"><dt className="break-words text-muted-foreground">{section}</dt><dd className="shrink-0 font-mono">{count} rows</dd></div>)}</dl></section>}
       {isPriceList ? (
         <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-card shadow-card">
           <table className="w-full text-sm">
@@ -228,6 +230,7 @@ function CheckPage() {
         </>
       )}
 
+      {isPriceList && !confirmed && suggestedMatches.some((m) => m.disposition === "no_contract") && <section className="mt-8 border-t border-border pt-5"><h2 className="font-semibold">No contract price – review</h2>{suggestedMatches.filter((m) => m.disposition === "no_contract").map((m) => { const row = lines.find((l) => l.id === m.line_id); return <div key={m.line_id} className="mt-4"><p className="break-words text-sm font-medium">{row?.description}</p><p className="mt-1 text-xs text-muted-foreground">Closest price-list names</p><ul className="mt-2 list-inside list-disc space-y-1 text-xs text-muted-foreground">{closestPriceListNames(row?.description ?? null, proms).map((name) => <li key={name} className="break-words">{name}</li>)}</ul></div>; })}</section>}
       {confirmed ? (
         <div className="mt-8 space-y-4"><p className="flex items-center gap-2 font-medium text-success"><CheckCircle2 className="h-5 w-5" /> Lines confirmed</p><Button variant="signal" disabled={saving} onClick={looksRight}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}View result</Button></div>
       ) : (

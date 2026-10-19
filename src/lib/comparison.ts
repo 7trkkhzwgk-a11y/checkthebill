@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import { z } from "zod";
 import { toDate } from "@/lib/extraction";
 import { messageRequest } from "@/lib/message-format";
+import { priceListItemName } from "@/lib/dandy";
 
 export const reviewedLineSchema = z.object({
   id: z.string().uuid(), date: z.string().nullable(), description: z.string().max(2000).nullable(),
@@ -116,6 +117,16 @@ export function applyGroupMatch(overrides: Record<string, string>, lineIds: stri
 }
 export const MATCH_CONFIDENCE_THRESHOLD = 0.5;
 
+export function closestPriceListNames(description: string | null, promises: Pick<ReviewedPromise, "item" | "notes">[]): string[] {
+  const wanted = tokens(invoiceItemName(description));
+  const ranked = promises.filter((p) => p.item).map((p) => {
+    const words = tokens(priceListItemName(p));
+    const overlap = wanted.filter((word) => words.some((w) => w === word || w.startsWith(word) || word.startsWith(w))).length;
+    return { name: p.item ?? "", score: wanted.length + words.length ? 2 * overlap / (wanted.length + words.length) : 0 };
+  }).sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  return [...new Set(ranked.map((p) => p.name))].slice(0, 3);
+}
+
 // Aliases select saved contract rows, never invent prices when a contract row is absent.
 const INVOICE_ITEM_ALIASES: Readonly<Record<string, string>> = {
   "signature denture bundle - wax rim workflow": "Signature New Dentures & Overdentures - Wax bite rim workflow",
@@ -137,7 +148,15 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
     const staged = isStagedItem({ item: line.description, notes: null });
     const alias = INVOICE_ITEM_ALIASES[aliasKey(line.description)];
     if (alias) {
-      const exact = candidates.filter((p) => itemKey(p.item?.replace(/[–—]/g, "-") ?? null) === itemKey(alias));
+      const exact = candidates.filter((p) => {
+        const leaf = itemKey(priceListItemName(p).replace(/[–—]/g, "-"));
+        if (/^Signature New Dentures/.test(alias)) {
+          const workflow = /Wax bite rim/i.test(alias) ? "wax bite rim" : "reference";
+          return leaf === aliasKey(alias) || (/Full Dentures [—–-] Signature dentures/i.test(p.item ?? "") && leaf === aliasKey(`New Dentures & Overdentures – ${workflow} workflow`));
+        }
+        if (alias === "Zirconia Monolithic" && p.notes?.startsWith("Section:") && !/^Section: Crown & Bridge/i.test(p.notes)) return false;
+        return leaf === aliasKey(alias);
+      });
       const p = exact.length === 1 ? exact[0] : undefined;
       return { line_id: line.id, promise_id: p?.id ?? null, confidence: p ? 1 : 0, quantity,
         disposition: p ? isStagedItem(p) ? "staged" : isComparablePromise(p) ? "matched" : "not_comparable" : "no_contract" };
@@ -148,7 +167,7 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
     let bestScore = 0;
     let tied = false;
     for (const p of candidates) {
-      const promiseTokens = tokens(p.item);
+      const promiseTokens = tokens(priceListItemName(p));
       if (lineTokens.includes("additional") && !promiseTokens.includes("additional")) continue;
       const overlap = lineTokens.filter((t) => promiseTokens.some((pt) => pt === t || pt.startsWith(t) || t.startsWith(pt))).length;
       let score = lineTokens.length ? overlap / lineTokens.length : 0;

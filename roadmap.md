@@ -1,10 +1,10 @@
 # Fixed invoice aliases
-- [ ] Fix section-aware price-list parsing, starred prices and saved counts; extend aliases and show three nearest names for unmatched items.
-- [ ] Replace the owner's old saved price list from the original file and verify matching, counts, reconciliation and review-only messages.
+- [x] Fix section-aware price-list parsing, starred prices and saved counts; extend aliases and show three nearest names for unmatched items. All 133 tests pass; build OK.
+- [x] Replace the owner's old saved price list from the original five-page PDF: 99 logical rows across 16 sections, including all 4 Signature rows; signed-in results show 24 matches, only Additional Wax Rim in review, unchanged reconciliation and a review-only draft.
 - [x] Apply exact aliases before fuzzy matching, preserving quantities, included and staged rules.
 - [x] Verify dispute item filtering with synthetic tests; refresh untouched saved review drafts; 125 tests pass and build OK.
 - [x] Verify saved results while signed in: aliases for existing contract rows work, but the saved price list lacks both Signature workflow entries, so 11 wax-rim bundle lines remain review. Reconciliation remains correct; review draft excludes matched/staged/included lines.
-- [ ] Resolve missing Signature workflow entries in the saved price list before claiming the real invoice matching fix complete.
+- [x] Resolve missing Signature workflow entries in the saved price list: wax bite rim $199 and reference $149 recovered from the original file; denture bundles now match, preserving x2.
 
 # Groq migration
 - [x] Move all document reading, drafts and chat to server-only Groq with requested models.

@@ -3,12 +3,12 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { extractionSchema } from "@/lib/extraction";
 import { extractionErrorMessage } from "@/lib/extraction-errors";
 import { combineInvoicePages, maskedExtraction, readingStepError } from "@/lib/invoice-extraction";
-import { isDandyDocument } from "@/lib/dandy";
+import { isDandyDocument, priceListSectionCounts } from "@/lib/dandy";
 import { z } from "zod";
 
 const documentSchema = z.object({ path: z.string().min(1), name: z.string(), mime: z.enum(["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain"]) });
 const partSchema = z.object({ file: documentSchema, sourcePath: z.string().optional(), readingId: z.string().uuid(), part: z.enum(["invoice", "price_list", "bill", "refund_promise"]), previousOrder: z.string().nullable().optional() });
-const CACHE_VERSION = "code-v1";
+const CACHE_VERSION = "code-v2-sections";
 
 function ownPath(path: string, userId: string) {
   if (!path.startsWith(`${userId}/`) || path.includes("..")) throw new Error("This file doesn't belong to your account.");
@@ -54,7 +54,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
       }
       const { error } = await context.supabase.storage.from("documents").upload(cachePath, new Blob([JSON.stringify(output)], { type: "application/json" }), { contentType: "application/json", upsert: true });
       if (error) throw new Error("Couldn't save the privately cached reading.");
-      return { ok: true as const, cachePath, lastOrder: output.bill_lines.at(-1)?.order_no ?? null, cached, readBy };
+      return { ok: true as const, cachePath, lastOrder: output.bill_lines.at(-1)?.order_no ?? null, cached, readBy, sections: data.part === "price_list" ? priceListSectionCounts(output.agreed_items) : [] };
     } catch (error) {
       const message = readingStepError(step, extractionErrorMessage(error));
       console.error("Invoice reading step failed", { step, message });
@@ -95,4 +95,40 @@ export const finishInvoiceReading = createServerFn({ method: "POST" })
     } catch (error) {
       return { ok: false as const, error: readingStepError(step, extractionErrorMessage(error)) };
     }
+  });
+
+export const replaceDandyPriceList = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input) => z.object({ billId: z.string().uuid(), file: documentSchema }).parse(input))
+  .handler(async ({ data, context }) => {
+    ownPath(data.file.path, context.userId);
+    const bill = await context.supabase.from("bills").select("bill_type").eq("id", data.billId).eq("user_id", context.userId).single();
+    const old = await context.supabase.from("promises").select("id,file_link,promise_kind").eq("bill_id", data.billId).eq("user_id", context.userId);
+    if (bill.error || bill.data?.bill_type !== "lab_invoice" || old.error || !old.data?.length || old.data.some(p => p.promise_kind !== "price_list")) throw new Error("Couldn't load this lab price list.");
+    const sourcePath = old.data[0]?.file_link;
+    if (!sourcePath || data.file.mime !== "text/plain") throw new Error("The original price-list file is missing.");
+    ownPath(sourcePath, context.userId);
+    const { loadDocument } = await import("@/lib/extraction-storage.server");
+    const { parseDandyPriceList } = await import("@/lib/dandy");
+    const { normalizeExtraction } = await import("@/lib/extraction");
+    const file = await loadDocument(context.supabase, data.file);
+    if (!file.text || !isDandyDocument(file.text)) throw new Error("This file doesn't contain a readable Dandy price list.");
+    const extraction = maskedExtraction(parseDandyPriceList(file.text));
+    const normalized = normalizeExtraction(extraction);
+    if (!normalized.promise_rows.length) throw new Error("No price-list rows were read. The saved list has not been changed.");
+    const rows = normalized.promise_rows.map(p => ({ ...p, source: normalized.source, user_id: context.userId, bill_id: data.billId, promise_kind: "price_list", file_link: sourcePath }));
+    const inserted = await context.supabase.from("promises").insert(rows).select("id");
+    if (inserted.error) throw new Error("Couldn't save the corrected price list. The old list is unchanged.");
+    const removed = await context.supabase.from("promises").delete().eq("bill_id", data.billId).eq("user_id", context.userId).in("id", old.data.map(p => p.id));
+    if (removed.error) {
+      await context.supabase.from("promises").delete().eq("user_id", context.userId).in("id", (inserted.data ?? []).map(p => p.id));
+      throw new Error("Couldn't replace the old price list. Try again.");
+    }
+    const cleared = await context.supabase.from("price_list_cache").delete().eq("user_id", context.userId).eq("file_link", sourcePath);
+    if (cleared.error) throw new Error("The corrected rows are saved, but the old price-list cache couldn't be removed.");
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(file.text));
+    const hash = Array.from(new Uint8Array(digest), v => v.toString(16).padStart(2, "0")).join("");
+    const cached = await context.supabase.from("price_list_cache").upsert({ user_id: context.userId, content_hash: `${CACHE_VERSION}-${hash}`, extraction: JSON.parse(JSON.stringify(extraction)), file_link: sourcePath }, { onConflict: "user_id,content_hash" });
+    if (cached.error) throw new Error("The corrected rows are saved, but caching failed. Try reading again.");
+    return { sections: priceListSectionCounts(extraction.agreed_items), count: rows.length };
   });

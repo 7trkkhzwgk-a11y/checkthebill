@@ -74,7 +74,8 @@ export const getCheckResult = createServerFn({ method: "POST" })
     if (messages.error) throw new Error("Couldn't load saved messages.");
     let comparison = b.data.comparison_result as unknown as Comparison | null;
     if (comparison && b.data.confirmed_at && b.data.bill_type === "lab_invoice") {
-      const confirmed_matches = Object.fromEntries(comparison.findings.filter((f) => f.line_id && f.promise_id).map((f) => [f.line_id, f.promise_id]));
+      const currentPromiseIds = new Set((p.data ?? []).map(row => row.id));
+      const confirmed_matches = Object.fromEntries(comparison.findings.filter((f) => f.line_id && currentPromiseIds.has(f.promise_id)).map((f) => [f.line_id, f.promise_id]));
       comparison = compareConfirmed((l.data ?? []).map((row) => reviewedLineSchema.parse(row)), (p.data ?? []).map((row) => ({ ...reviewedPromiseSchema.parse(row), promise_kind: row.promise_kind })), comparison.checked_on,
         { orders_subtotal: b.data.orders_subtotal, sales_tax: b.data.sales_tax, bill_total: b.data.bill_total, confirmed_matches });
       const { error: saveError } = await supabase.from("bills").update({ comparison_result: comparison as unknown as Json }).eq("id", data.billId).eq("user_id", userId);
@@ -100,7 +101,7 @@ export const getCheckResult = createServerFn({ method: "POST" })
     }
     const usage = await supabase.from("ai_usage").select("tokens").eq("bill_id", data.billId).eq("user_id", userId);
     if (usage.error) throw new Error("Couldn't read AI usage.");
-    return { aiTokens: (usage.data ?? []).reduce((n, row) => n + row.tokens, 0), bill: { ...b.data, comparison_result: comparison }, lines: l.data ?? [], messages: messages.data ?? [] };
+    return { aiTokens: (usage.data ?? []).reduce((n, row) => n + row.tokens, 0), bill: { ...b.data, comparison_result: comparison }, lines: l.data ?? [], promises: p.data ?? [], messages: messages.data ?? [] };
   });
 
 export const generateCheckDrafts = createServerFn({ method: "POST" })
