@@ -191,9 +191,9 @@ export function parseDandyPriceList(text: string): Extraction {
     if (!amounts.length && !na) continue;
 
     // The item name stops where the price starts, or where "N/A" stands in place of a price.
-    const naAt = na ? na.index + na[0].lastIndexOf("N") : raw.length;
-    const cut = amounts.length ? amounts[0].start : naAt;
     const first = amounts[0];
+    const naAt = na ? (na.index ?? 0) + na[0].lastIndexOf("N") : raw.length;
+    const cut = first ? first.start : naAt;
     const name = raw.slice(0, cut).replace(/\s+/g, " ").trim().replace(/[:|]+$/, "").trim();
     if (!name || SECTION_TITLES.test(name)) continue;
 
