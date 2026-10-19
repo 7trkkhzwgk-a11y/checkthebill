@@ -3,7 +3,7 @@
 - [x] Read PDF text in code, batch text pages, render scans locally, and persist reusable price lists.
 - [x] Add bounded rate-limit retries and per-check token usage on results; preserve deterministic rules.
 - [x] 94 tests pass; browser verified four-page text batches, scan images and clear missing-key state.
-- [ ] Verify real Groq extraction, cache reuse, drafts, chat and saved token totals, then publish — secret is saved, but the first live request stopped before reaching Groq with a request-header configuration error; update GROQ_API_KEY through the secure form before further calls.
+- [x] Verify real Groq extraction, cache reuse, drafts, chat and saved token totals: refund mode read both files through Groq (4,196 tokens recorded), the code-read price list is cached and reused, and results show the saved total.
 
 # Published invoice reading
 - [x] Split lab invoice PDFs into single-page private uploads and sequential server requests with progress.
