@@ -3,12 +3,12 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { extractionSchema } from "@/lib/extraction";
 import { extractionErrorMessage } from "@/lib/extraction-errors";
 import { combineInvoicePages, maskedExtraction, readingStepError } from "@/lib/invoice-extraction";
-import { isDandyDocument } from "@/lib/dandy";
+import { isDandyDocument, priceListSectionCounts } from "@/lib/dandy";
 import { z } from "zod";
 
 const documentSchema = z.object({ path: z.string().min(1), name: z.string(), mime: z.enum(["application/pdf", "image/png", "image/jpeg", "image/webp", "text/plain"]) });
 const partSchema = z.object({ file: documentSchema, sourcePath: z.string().optional(), readingId: z.string().uuid(), part: z.enum(["invoice", "price_list", "bill", "refund_promise"]), previousOrder: z.string().nullable().optional() });
-const CACHE_VERSION = "code-v1";
+const CACHE_VERSION = "code-v2-sections";
 
 function ownPath(path: string, userId: string) {
   if (!path.startsWith(`${userId}/`) || path.includes("..")) throw new Error("This file doesn't belong to your account.");
@@ -54,7 +54,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
       }
       const { error } = await context.supabase.storage.from("documents").upload(cachePath, new Blob([JSON.stringify(output)], { type: "application/json" }), { contentType: "application/json", upsert: true });
       if (error) throw new Error("Couldn't save the privately cached reading.");
-      return { ok: true as const, cachePath, lastOrder: output.bill_lines.at(-1)?.order_no ?? null, cached, readBy };
+      return { ok: true as const, cachePath, lastOrder: output.bill_lines.at(-1)?.order_no ?? null, cached, readBy, sections: data.part === "price_list" ? priceListSectionCounts(output.agreed_items) : [] };
     } catch (error) {
       const message = readingStepError(step, extractionErrorMessage(error));
       console.error("Invoice reading step failed", { step, message });

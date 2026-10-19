@@ -100,7 +100,7 @@ export const getCheckResult = createServerFn({ method: "POST" })
     }
     const usage = await supabase.from("ai_usage").select("tokens").eq("bill_id", data.billId).eq("user_id", userId);
     if (usage.error) throw new Error("Couldn't read AI usage.");
-    return { aiTokens: (usage.data ?? []).reduce((n, row) => n + row.tokens, 0), bill: { ...b.data, comparison_result: comparison }, lines: l.data ?? [], messages: messages.data ?? [] };
+    return { aiTokens: (usage.data ?? []).reduce((n, row) => n + row.tokens, 0), bill: { ...b.data, comparison_result: comparison }, lines: l.data ?? [], promises: p.data ?? [], messages: messages.data ?? [] };
   });
 
 export const generateCheckDrafts = createServerFn({ method: "POST" })
