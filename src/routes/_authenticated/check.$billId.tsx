@@ -140,6 +140,27 @@ function CheckPage() {
       </div>
 
       <h2 className="mt-8 font-semibold">Promise</h2>
+      {isPriceList ? (
+        <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-card shadow-card">
+          <table className="w-full text-sm">
+            <thead><tr className="border-b border-border">
+              {["Item", "Agreed price", "Notes"].map((h) => <th key={h} className={th}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {proms.map((p, i) => {
+                const comparable = isComparablePromise(p);
+                return (
+                  <tr key={p.id} className={`border-b border-border last:border-0 ${comparable ? "" : "opacity-60"}`}>
+                    <td className="p-1"><Cell value={p.item ?? ""} onChange={(v) => setP(i, "item", v)} disabled={confirmed} /></td>
+                    <td className="p-1"><Cell type="number" value={p.promised_amount?.toString() ?? ""} onChange={(v) => setP(i, "promised_amount", v)} disabled={confirmed} /></td>
+                    <td className="p-2 text-xs text-muted-foreground">{comparable ? (p.notes ?? "—") : "Not comparable — skipped"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div className="mt-3 space-y-4">
         {proms.map((p, i) => (
           <section key={p.id} aria-label={`Promise ${i + 1}`} className="rounded-lg border border-border bg-card p-5 shadow-card">
