@@ -92,7 +92,7 @@ export const generateCheckDrafts = createServerFn({ method: "POST" })
     const { data: bill, error } = await supabase.from("bills").select("issuer,currency,confirmed_at,comparison_result").eq("id", data.billId).eq("user_id", userId).single();
     if (error || !bill?.confirmed_at || !bill.comparison_result) throw new Error("Confirm the lines before drafting a message.");
     const comparison = bill.comparison_result as unknown as Comparison;
-    const promises = await supabase.from("promises").select("id,source,item,pnr").eq("bill_id", data.billId).eq("user_id", userId);
+    const promises = await supabase.from("promises").select("id,source,item,pnr,bank_ref").eq("bill_id", data.billId).eq("user_id", userId);
     if (promises.error) throw new Error("Couldn't load the message recipient.");
     comparison.findings = comparison.findings.map((f) => presentFinding(f, promises.data?.find((p) => p.id === f.promise_id), bill.issuer, bill.currency));
     const { writeDraft } = await import("@/lib/draft.server");
@@ -135,7 +135,7 @@ export const askCheckQuestion = createServerFn({ method: "POST" })
     const { data: bill, error } = await supabase.from("bills").select("issuer,currency,comparison_result").eq("id", data.billId).eq("user_id", userId).single();
     const comparison = bill?.comparison_result as unknown as Comparison | null;
     if (error || !comparison) throw new Error("Confirm the lines before asking questions.");
-    const promises = await supabase.from("promises").select("id,source,item,pnr").eq("bill_id", data.billId).eq("user_id", userId);
+    const promises = await supabase.from("promises").select("id,source,item,pnr,bank_ref").eq("bill_id", data.billId).eq("user_id", userId);
     if (promises.error) throw new Error("Couldn't load the check details.");
     comparison.findings = comparison.findings.map((f) => presentFinding(f, promises.data?.find((p) => p.id === f.promise_id), bill.issuer, bill.currency));
     const { answerQuestion } = await import("@/lib/ask.server");

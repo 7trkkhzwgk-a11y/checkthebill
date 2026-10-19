@@ -1,3 +1,7 @@
+# Message routing regression
+- [ ] Correct refund recipients and exact single requests; keep vendor recipients separate.
+- [ ] Re-test merchant refunds, bank refunds and vendor messages, including saved-result flow.
+
 # Confirmed checks and dispute messages
 - [x] Save confirmed edits and run deterministic matching, maths, flagging and contact routing on the server.
 - [x] Persist results and AI drafts; add sent/not-sending tracking and word-edit counts.

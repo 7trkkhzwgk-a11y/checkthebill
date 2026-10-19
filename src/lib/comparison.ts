@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import { z } from "zod";
 import { toDate } from "@/lib/extraction";
+import { messageRequest } from "@/lib/message-format";
 
 export const reviewedLineSchema = z.object({
   id: z.string().uuid(), date: z.string().nullable(), description: z.string().max(2000).nullable(),
@@ -271,5 +272,5 @@ export function draftFacts(f: Finding) {
     agreed_price: f.kind === "invoice" ? f.promised : null,
     credit_found: f.credit_found, missing_amount: f.missing_amount, overcharge: f.overcharge,
     promised_on: f.promised_on, days_waiting: f.days_waiting, refund_id: f.refund_id, transaction_id: f.transaction_id,
-    bank_ref: f.bank_ref, request: f.recipient === "MERCHANT" ? "Please provide the bank reference number for this refund ID." : f.recipient === "BANK" ? "Please trace the missing or incomplete refund using this bank reference." : "Please correct this invoice overcharge." };
+    bank_ref: f.bank_ref, request: messageRequest(f) };
 }
