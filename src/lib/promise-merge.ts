@@ -1,5 +1,5 @@
 // Combines a document-read promise with the user's typed promise. Typed values win; both are kept visible.
-export type MergeRow = { item: string | null; promised_amount: number | null; promised_on: string | null; notes: string | null };
+export type MergeRow = { item: string | null; promised_amount: number | null; promised_on: string | null; notes?: string | null };
 export type TypedFields = { item: string | null; amount: number | null; date: string | null; who_promised: string | null } | null;
 
 export const NOTE_UNREAD = "Promise note (not read automatically): ";
