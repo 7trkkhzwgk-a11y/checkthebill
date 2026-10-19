@@ -110,11 +110,12 @@ export function parseDandyInvoice(text: string): Extraction {
       pending = /credit\s+for/i.test(tail ?? "") ? (tail ?? "").replace(/^[-–—]\s*/, "").trim() : "";
       inCredits = inCredits || /credit\s+for/i.test(tail ?? "");
       sawOrder = true;
-      const onLine = amounts.filter((m) => m.start >= header.index! + header[0].indexOf(tail ?? ""));
+      const onLine = amounts.filter((m) => m.start >= (header.index ?? 0) + header[0].indexOf(tail ?? ""));
       if (onLine.length >= 2) {
         const last = onLine.slice(-3);
-        if (last.length === 3) { order.tax = magnitude(last[1]); order.total = magnitude(last[2]); }
-        else order.total = magnitude(last[1]);
+        const [, taxOrTotal, total] = last;
+        if (taxOrTotal && total) { order.tax = magnitude(taxOrTotal); order.total = magnitude(total); }
+        else if (taxOrTotal) order.total = magnitude(taxOrTotal);
       }
       continue;
     }
@@ -124,21 +125,23 @@ export function parseDandyInvoice(text: string): Extraction {
 
     if (!sawOrder) {
       // The summary block sits above the order table.
-      if (/^Orders\b/i.test(raw) && amounts.length) { ordersSubtotal = amounts[0].value; continue; }
-      if (/^Credits & Refunds\b/i.test(raw) && amounts.length) { creditsPrinted = magnitude(amounts[0]); continue; }
-      if (/^Sales Tax\b/i.test(raw) && amounts.length) { salesTax = amounts[0].value; continue; }
-      if (/^Total Balance\b/i.test(raw) && amounts.length) { billTotal = amounts[0].value; continue; }
+      const first = amounts[0];
+      if (/^Orders\b/i.test(raw) && first) { ordersSubtotal = first.value; continue; }
+      if (/^Credits & Refunds\b/i.test(raw) && first) { creditsPrinted = magnitude(first); continue; }
+      if (/^Sales Tax\b/i.test(raw) && first) { salesTax = first.value; continue; }
+      if (/^Total Balance\b/i.test(raw) && first) { billTotal = first.value; continue; }
     }
-    if (/^Subtotal - Lab Work\b/i.test(raw) && amounts.length >= 2) { ordersSubtotal ??= amounts[0].value; salesTax ??= amounts[1].value; continue; }
-    if (/^Subtotal - Credits & Refunds\b/i.test(raw) && amounts.length) { creditsPrinted ??= magnitude(amounts[0]); continue; }
+    const [firstAmount, secondAmount] = amounts;
+    if (/^Subtotal - Lab Work\b/i.test(raw) && firstAmount && secondAmount) { ordersSubtotal ??= firstAmount.value; salesTax ??= secondAmount.value; continue; }
+    if (/^Subtotal - Credits & Refunds\b/i.test(raw) && firstAmount) { creditsPrinted ??= magnitude(firstAmount); continue; }
 
     if (!order) { pending = joinText(pending, raw); continue; }
 
     // Credit rows print the doctor before the amount, so only the saved reason is kept.
-    if (inCredits && amounts.length) {
+    if (inCredits && firstAmount) {
       out.bill_lines.push(line({
-        date: order.date, description: pending.replace(/^[-–—]\s*/, "").trim(), amount: magnitude(amounts[0]),
-        type: "credit", order_no: order.order_no, tax_amount: null, total_amount: magnitude(amounts[0]),
+        date: order.date, description: pending.replace(/^[-–—]\s*/, "").trim(), amount: magnitude(firstAmount),
+        type: "credit", order_no: order.order_no, tax_amount: null, total_amount: magnitude(firstAmount),
       }));
       pending = "";
       continue;
@@ -147,14 +150,15 @@ export function parseDandyInvoice(text: string): Extraction {
     // The wrapped "Open Order" column prints the order's price, tax and total before any item lines.
     if (amounts.length >= 2 && order.tax === null && order.total === null) {
       const last = amounts.slice(-3);
-      if (last.length === 3) { order.tax = magnitude(last[1]); order.total = magnitude(last[2]); }
-      else order.total = magnitude(last[1]);
+      const [, taxOrTotal, total] = last;
+      if (taxOrTotal && total) { order.tax = magnitude(taxOrTotal); order.total = magnitude(total); }
+      else if (taxOrTotal) order.total = magnitude(taxOrTotal);
       pending = "";
       continue;
     }
 
-    if (amounts.length === 1) {
-      const money = amounts[0];
+    if (amounts.length === 1 && firstAmount) {
+      const money = firstAmount;
       const before = raw.slice(0, money.start).replace(/\s+/g, " ").trim();
       const description = joinText(pending, before).replace(/^[-–—]\s*/, "").replace(/\s+/g, " ").trim();
       pending = "";

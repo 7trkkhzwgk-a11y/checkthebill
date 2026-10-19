@@ -137,7 +137,7 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
     const staged = isStagedItem({ item: line.description, notes: null });
     const alias = INVOICE_ITEM_ALIASES[aliasKey(line.description)];
     if (alias) {
-      const exact = candidates.filter((p) => aliasKey(p.item) === aliasKey(alias));
+      const exact = candidates.filter((p) => itemKey(p.item?.replace(/[–—]/g, "-") ?? null) === itemKey(alias));
       const p = exact.length === 1 ? exact[0] : undefined;
       return { line_id: line.id, promise_id: p?.id ?? null, confidence: p ? 1 : 0, quantity,
         disposition: p ? isStagedItem(p) ? "staged" : isComparablePromise(p) ? "matched" : "not_comparable" : "no_contract" };
