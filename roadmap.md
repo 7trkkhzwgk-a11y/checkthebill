@@ -1,7 +1,8 @@
 # Fixed invoice aliases
 - [x] Apply exact aliases before fuzzy matching, preserving quantities, included and staged rules.
 - [x] Verify dispute item filtering with synthetic tests; refresh untouched saved review drafts; 125 tests pass and build OK.
-- [ ] Verify saved results while signed in — blocked: no active preview session and requesting-user session mint found no matching account; user must sign in.
+- [x] Verify saved results while signed in: aliases for existing contract rows work, but the saved price list lacks both Signature workflow entries, so 11 wax-rim bundle lines remain review. Reconciliation remains correct; review draft excludes matched/staged/included lines.
+- [ ] Resolve missing Signature workflow entries in the saved price list before claiming the real invoice matching fix complete.
 
 # Groq migration
 - [x] Move all document reading, drafts and chat to server-only Groq with requested models.
