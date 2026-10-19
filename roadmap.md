@@ -18,3 +18,7 @@
 - [x] Add Ask a question on the result page answering from saved computed facts only.
 - [x] Add History page listing past checks with date, issuer, flag, missing amount and message status.
 - [x] Add New check · History · Log out to the top navigation.
+
+# Password reset
+- [x] Add Forgot password on the sign-in page and a public reset-password page.
+- [x] Test the reset link rules and verify the request, page states and save call.
