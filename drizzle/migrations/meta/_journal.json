@@ -36,6 +36,13 @@
       "when": 1792363145244,
       "tag": "0004_document_currency_booking_and_message_format",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792368319523,
+      "tag": "0005_add_invoice_pricelist_fields",
+      "breakpoints": true
     }
   ]
 }
