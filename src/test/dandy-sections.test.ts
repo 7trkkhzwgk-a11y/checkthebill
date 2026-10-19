@@ -65,4 +65,29 @@ describe("section-aware Dandy price lists", () => {
     expect(new Set(names).size).toBe(3);
     expect(matchInvoiceItems([line("Additional Wax Rim", 40)], promises)[0]?.disposition).toBe("no_contract");
   });
+  it("retains the final aligner section as plan rows rather than orphan prices", () => {
+    const list = parseDandyPriceList(`4. Clear Aligners
+Plans
+Dandy On-Demand Dandy 20 Dandy Max
+Price $100 base price +
+$35 / aligner
+Dual arch: $1,099
+Single arch: $824
+Dual arch: $1,599
+Single arch: $1,199
+Plan expiration 1 year 2 years 3 years
+Extra Retainers Single: $50
+Dual (1 set): $85
+Multiple (4 sets): $240
+Single: $50
+Dual (1 set): $85
+Multiple (3 sets): $180
+Single: $50
+Dual (1 set): $85
+Multiple (2 sets): $120
+Turnaround time`);
+    expect(priceListSectionCounts(list.agreed_items)).toEqual([{ section: "Clear Aligners", count: 6 }]);
+    expect(list.agreed_items.map(priceListItemName)).toEqual(["Dandy On-Demand", "Dandy 20", "Dandy Max", "Dandy On-Demand – Extra Retainers", "Dandy 20 – Extra Retainers", "Dandy Max – Extra Retainers"]);
+    expect(list.agreed_items.every(p => p.promised_amount === null)).toBe(true);
+  });
 });
