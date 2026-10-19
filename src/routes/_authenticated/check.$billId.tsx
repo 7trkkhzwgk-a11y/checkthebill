@@ -24,7 +24,7 @@ export const Route = createFileRoute("/_authenticated/check/$billId")({
 });
 
 type Line = { id: string; date: string | null; description: string | null; amount: number | null; type: string | null; reference_no: string | null; bank_ref: string | null };
-type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null; pnr: string | null };
+type Prom = { id: string; promised_on: string | null; item: string | null; original_charge: number | null; promised_amount: number | null; reference_no: string | null; transaction_id: string | null; bank_ref: string | null; status_text: string | null; source: string | null; pnr: string | null; promise_kind: string | null; notes: string | null };
 
 function Cell({ value, onChange, type = "text", disabled }: { value: string; onChange: (v: string) => void; type?: string; disabled: boolean }) {
   return <Input className="h-8 min-w-24 font-mono text-xs" type={type === "date" ? "text" : type} step={type === "number" ? "any" : undefined} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
@@ -41,6 +41,7 @@ function CheckPage() {
   const [confirmed, setConfirmed] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
   const [proms, setProms] = useState<Prom[]>([]);
+  const [matchOverrides, setMatchOverrides] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -49,7 +50,7 @@ function CheckPage() {
       const [b, l, p] = await Promise.all([
         supabase.from("bills").select("issuer, confirmed_at, bill_total,currency").eq("id", billId).single(),
         supabase.from("line_items").select("id,date,description,amount,type,reference_no,bank_ref").eq("bill_id", billId).order("date"),
-        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source,pnr").eq("bill_id", billId),
+        supabase.from("promises").select("id,promised_on,item,original_charge,promised_amount,reference_no,transaction_id,bank_ref,status_text,source,pnr,promise_kind,notes").eq("bill_id", billId),
       ]);
       setIssuer(b.data?.issuer ?? null);
       setBillTotal(b.data?.bill_total ?? null);
@@ -73,7 +74,7 @@ function CheckPage() {
         if (line.type !== "charge" && line.type !== "credit") throw new Error("Choose charge or credit for each transaction.");
         return { ...line, type: line.type };
       });
-      await confirm({ data: { billId, issuer, billTotal, currency, lines: validLines, promises: proms } });
+      await confirm({ data: { billId, issuer, billTotal, currency, lines: validLines, promises: proms, confirmedMatches } });
       setConfirmed(true);
       try { await draft({ data: { billId } }); }
       catch (error) { toast.error(error instanceof Error ? error.message : "The maths is saved, but the message couldn't be written."); }
