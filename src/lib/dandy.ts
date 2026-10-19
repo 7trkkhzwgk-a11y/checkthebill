@@ -187,21 +187,24 @@ export function parseDandyPriceList(text: string): Extraction {
   for (const raw of lines) {
     if (SECTION_TITLES.test(raw) || raw.startsWith("*")) continue;
     const amounts = moneyValues(raw);
-    const hasNA = /(?:^|[\s|])N\/?A(?:$|[\s|])/i.test(raw);
-    if (!amounts.length && !hasNA) continue;
+    const na = raw.match(/(?:^|\s)(N\/?A)(?=\s|$)/i);
+    if (!amounts.length && !na) continue;
 
+    // The item name stops where the price starts, or where "N/A" stands in place of a price.
+    const naAt = na ? na.index + na[0].lastIndexOf("N") : raw.length;
+    const cut = amounts.length ? amounts[0].start : naAt;
     const first = amounts[0];
-    const name = (first ? raw.slice(0, first.start) : raw).replace(/\s+/g, " ").trim().replace(/[:|]+$/, "").trim();
+    const name = raw.slice(0, cut).replace(/\s+/g, " ").trim().replace(/[:|]+$/, "").trim();
     if (!name || SECTION_TITLES.test(name)) continue;
 
-    const tail = (first ? raw.slice(first.start) : raw.slice(name.length)).replace(/\s+/g, " ").trim();
+    const tail = raw.slice(cut).replace(/\s+/g, " ").trim();
     const isRange = /\$\s?[\d,.]+\s?(?:-|–|—|to)\s?\$?\s?[\d,.]+/i.test(tail);
     const alloy = /\+\s*alloy/i.test(tail);
 
     if (alloy) { out.agreed_items.push(priceRow({ item: name, promised_amount: first?.value ?? null, notes: tail || "+ Alloy" })); continue; }
     if (isRange) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Price range ${tail}` })); continue; }
-    if (!amounts.length && hasNA) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: "N/A – contact account manager" })); continue; }
-    if (hasNA && /\bN\/?A\b/i.test(tail)) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Not a fixed price (${tail})` })); continue; }
+    if (!amounts.length && na) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: "N/A – contact account manager" })); continue; }
+    if (na && /\bN\/?A\b/i.test(tail)) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Not a fixed price (${tail})` })); continue; }
     if (amounts.length > 1) { out.agreed_items.push(priceRow({ item: name, promised_amount: null, notes: `Several printed prices (${tail})` })); continue; }
     if (!first) continue;
 
