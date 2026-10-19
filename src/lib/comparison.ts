@@ -21,6 +21,7 @@ export const reviewedPromiseSchema = z.object({
 export type ReviewedLine = z.infer<typeof reviewedLineSchema>;
 export type ReviewedPromise = z.infer<typeof reviewedPromiseSchema> & { promise_kind?: string | null };
 export type Finding = {
+  order_no?: string | null; invoice_item?: string | null; disposition?: "matched" | "included" | "not_comparable" | "no_contract";
   currency?: string | null; contact_name?: string | null; item?: string | null; pnr?: string | null; missing_amount?: string | null;
   kind: "refund" | "invoice"; promise_id: string; line_id: string | null;
   charged: string | null; promised: string | null; kept_by_merchant: string | null;
@@ -30,11 +31,19 @@ export type Finding = {
   flagged: boolean; flag_reason: string | null; note: string | null; recipient: "MERCHANT" | "BANK" | "VENDOR" | null;
   contact_reason: string | null; issue: string | null;
 };
-export type Comparison = { checked_on: string; findings: Finding[]; issues: string[]; status: "flagged" | "clear" | "incomplete" };
+export type Reconciliation = { items_total: string; orders_subtotal: string | null; matches: boolean | null };
+export type Comparison = { checked_on: string; findings: Finding[]; issues: string[]; status: "flagged" | "clear" | "incomplete"; reconciliation?: Reconciliation };
 export const money = (value: number | string) => new Decimal(value).toFixed(2);
 const equalMoney = (a: number | null, b: number | null) => a !== null && b !== null && new Decimal(a).eq(b);
 const equalRef = (a: string | null, b: string | null) => !!a?.trim() && !!b?.trim() && a.trim() === b.trim();
 const itemKey = (item: string | null) => item?.trim().replace(/\s+/g, " ").toLocaleLowerCase() ?? "";
+export function invoiceItemName(description: string | null): string {
+  return (description ?? "").replace(/^\s*crown\s+\d+\s*[-–—]\s*/i, "").trim();
+}
+export function reconcileInvoice(lines: Pick<ReviewedLine, "amount" | "type">[], ordersSubtotal: number | null): Reconciliation {
+  const items_total = lines.filter((l) => l.type === "charge").reduce((sum, l) => sum.plus(l.amount ?? 0), new Decimal(0)).toFixed(2);
+  return { items_total, orders_subtotal: ordersSubtotal === null ? null : money(ordersSubtotal), matches: ordersSubtotal === null || lines.some((l) => l.type === "charge" && l.amount === null) ? null : new Decimal(items_total).eq(ordersSubtotal) };
+}
 
 // A price-list row is comparable only when it carries one fixed agreed price.
 export function isComparablePromise(p: Pick<ReviewedPromise, "item" | "promised_amount" | "notes">): boolean {
@@ -70,20 +79,35 @@ export function isBilateral(description: string | null): boolean {
   return numbers.some((n) => side(n)) && numbers.some((n) => !side(n));
 }
 
-export type ItemMatch = { line_id: string; promise_id: string | null; confidence: number; quantity: number };
+export type ItemMatch = { line_id: string; promise_id: string | null; confidence: number; quantity: number; disposition: "matched" | "included" | "not_comparable" | "no_contract" };
+export function groupInvoiceMatches(lines: Pick<ReviewedLine, "id" | "description">[], matches: ItemMatch[]) {
+  const groups = new Map<string, { name: string; line_ids: string[]; match: ItemMatch }>();
+  for (const m of matches.filter((m) => m.disposition === "matched")) {
+    const name = invoiceItemName(lines.find((l) => l.id === m.line_id)?.description ?? null);
+    const key = itemKey(name);
+    const group = groups.get(key);
+    if (group) group.line_ids.push(m.line_id);
+    else groups.set(key, { name, line_ids: [m.line_id], match: m });
+  }
+  return [...groups.values()];
+}
+export function applyGroupMatch(overrides: Record<string, string>, lineIds: string[], promiseId: string): Record<string, string> {
+  return { ...overrides, ...Object.fromEntries(lineIds.map((id) => [id, promiseId])) };
+}
 export const MATCH_CONFIDENCE_THRESHOLD = 0.5;
 
 // Keyword overlap between the invoice item and each comparable price-list row; best unique score wins.
-export function matchInvoiceItems(lines: Pick<ReviewedLine, "id" | "description" | "type">[], promises: ReviewedPromise[]): ItemMatch[] {
-  const comparable = promises.filter((p) => !!itemKey(p.item) && isComparablePromise(p));
+export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description" | "type"> & { amount?: number | null })[], promises: ReviewedPromise[]): ItemMatch[] {
+  const candidates = promises.filter((p) => !!itemKey(p.item));
   return lines.filter((l) => l.type === "charge").map((line) => {
     const quantity = lineQuantity(line.description);
-    const lineTokens = tokens(line.description);
+    if (line.amount === 0) return { line_id: line.id, promise_id: null, confidence: 1, quantity, disposition: "included" };
+    const lineTokens = tokens(invoiceItemName(line.description));
     const bilateral = isBilateral(line.description);
     let best: ReviewedPromise | null = null;
     let bestScore = 0;
     let tied = false;
-    for (const p of comparable) {
+    for (const p of candidates) {
       const promiseTokens = tokens(p.item);
       const overlap = lineTokens.filter((t) => promiseTokens.some((pt) => pt === t || pt.startsWith(t) || t.startsWith(pt))).length;
       let score = lineTokens.length ? overlap / lineTokens.length : 0;
@@ -95,8 +119,8 @@ export function matchInvoiceItems(lines: Pick<ReviewedLine, "id" | "description"
       if (score > bestScore + 1e-9) { best = p; bestScore = score; tied = false; }
       else if (Math.abs(score - bestScore) <= 1e-9 && score > 0) tied = true;
     }
-    if (tied || bestScore < MATCH_CONFIDENCE_THRESHOLD) return { line_id: line.id, promise_id: null, confidence: Math.round(bestScore * 100) / 100, quantity };
-    return { line_id: line.id, promise_id: best?.id ?? null, confidence: Math.round(bestScore * 100) / 100, quantity };
+    if (tied || bestScore < MATCH_CONFIDENCE_THRESHOLD) return { line_id: line.id, promise_id: null, confidence: Math.round(bestScore * 100) / 100, quantity, disposition: "no_contract" };
+    return { line_id: line.id, promise_id: best?.id ?? null, confidence: Math.round(bestScore * 100) / 100, quantity, disposition: best && isComparablePromise(best) ? "matched" : "not_comparable" };
   });
 }
 
@@ -157,23 +181,32 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     }
     findings.push(f);
   }
-  if (agreed.length) {
+  if (agreed.length || (!refunds.length && options?.orders_subtotal != null)) {
     const matches = matchInvoiceItems(lines, agreed);
     for (const line of lines.filter((l) => l.type === "charge")) {
       const match = matches.find((m) => m.line_id === line.id);
       const override = options?.confirmed_matches?.[line.id];
-      const chosenId = override ?? match?.promise_id ?? null;
+      const chosenId = match?.disposition === "included" ? null : override ?? match?.promise_id ?? null;
       const p = chosenId ? agreed.find((candidate) => candidate.id === chosenId) : undefined;
-      if (!p) { issues.push(`No comparable agreed price confidently matches invoice line ${line.id}. Review the match on the confirmation screen.`); continue; }
-      const f = base(p, "invoice");
+      const f = base(p ?? { id: "", item: line.description, promised_amount: null, original_charge: null, promised_on: null, reference_no: null, transaction_id: null, bank_ref: null, status_text: null, source: null }, "invoice");
       f.line_id = line.id;
+      f.order_no = line.order_no ?? line.reference_no;
+      f.invoice_item = line.description;
+      f.disposition = match?.disposition === "included" ? "included" : p ? isComparablePromise(p) ? "matched" : "not_comparable" : "no_contract";
       f.charged = line.amount === null ? null : money(line.amount);
+      if (f.disposition !== "matched" || !p) {
+        f.promised = null;
+        f.note = f.disposition === "included" ? "Included – $0" : f.disposition === "not_comparable" ? "Not comparable" : "No contract price – review";
+        if (f.disposition === "no_contract") issues.push(`No contract price – review: ${line.description ?? "Invoice item"}.`);
+        findings.push(f);
+        continue;
+      }
       if (line.amount === null || p.promised_amount === null) { f.issue = "An invoice amount or agreed price is missing."; issues.push(f.issue); }
       else {
         const agreedTotal = new Decimal(p.promised_amount).times(match?.quantity ?? 1);
         f.promised = agreedTotal.toFixed(2);
         f.overcharge = new Decimal(line.amount).minus(agreedTotal).toFixed(2);
-        if (isStagedItem(p)) {
+        if (isStagedItem(p) || isStagedItem({ item: line.description, notes: null })) {
           f.note = "Staged – check total when order completes.";
         } else if (new Decimal(f.overcharge).gt(0)) {
           f.flagged = true; f.recipient = "VENDOR";
@@ -187,7 +220,7 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     }
   }
   if (!promises.length || !lines.some((l) => l.type === "charge") || !findings.length) issues.push("There is not enough matching bill and promise information to finish this check.");
-  return { checked_on: today, findings, issues: [...new Set(issues)], status: findings.some((f) => f.flagged) ? "flagged" : issues.length ? "incomplete" : "clear" };
+  return { checked_on: today, findings, issues: [...new Set(issues)], status: findings.some((f) => f.flagged) ? "flagged" : issues.length ? "incomplete" : "clear", ...(!refunds.length ? { reconciliation: reconcileInvoice(lines, billTotals.orders_subtotal) } : {}) };
 }
 
 export function countWordsChanged(draft: string, final: string): number {
@@ -203,7 +236,8 @@ export function countWordsChanged(draft: string, final: string): number {
 }
 
 export function draftFacts(f: Finding) {
-  return { recipient: f.contact_name ?? (f.recipient === "BANK" ? "your bank" : "the billing company"), item: f.item, pnr: f.pnr,
+  return { recipient: f.contact_name ?? (f.recipient === "BANK" ? "your bank" : "the billing company"), item: f.kind === "invoice" ? f.invoice_item ?? f.item : f.item, pnr: f.pnr,
+    ...(f.kind === "invoice" ? { order_no: f.order_no ?? null } : {}),
     refund_promised: f.kind === "refund" ? f.promised : null,
     agreed_price: f.kind === "invoice" ? f.promised : null,
     credit_found: f.credit_found, missing_amount: f.missing_amount, overcharge: f.overcharge,
