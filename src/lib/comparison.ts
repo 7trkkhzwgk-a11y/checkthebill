@@ -152,20 +152,25 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     findings.push(f);
   }
   if (agreed.length) {
+    const matches = matchInvoiceItems(lines, agreed);
     for (const line of lines.filter((l) => l.type === "charge")) {
-      const matches = agreed.filter((p) => !!itemKey(p.item) && itemKey(p.item) === itemKey(line.description));
-      const p = matches.length === 1 ? matches[0] : undefined;
-      if (!p) { issues.push(matches.length ? "Multiple agreed prices match an invoice item. Review the promise." : `No agreed price matches invoice line ${line.id}.`); continue; }
+      const match = matches.find((m) => m.line_id === line.id);
+      const p = match?.promise_id ? agreed.find((candidate) => candidate.id === match.promise_id) : undefined;
+      if (!p) { issues.push(`No comparable agreed price confidently matches invoice line ${line.id}. Review the match on the confirmation screen.`); continue; }
       const f = base(p, "invoice");
       f.line_id = line.id;
       f.charged = line.amount === null ? null : money(line.amount);
       if (line.amount === null || p.promised_amount === null) { f.issue = "An invoice amount or agreed price is missing."; issues.push(f.issue); }
       else {
-        f.overcharge = new Decimal(line.amount).minus(p.promised_amount).toFixed(2);
+        const agreedTotal = new Decimal(p.promised_amount).times(match?.quantity ?? 1);
+        f.promised = agreedTotal.toFixed(2);
+        f.overcharge = new Decimal(line.amount).minus(agreedTotal).toFixed(2);
         if (new Decimal(f.overcharge).gt(0)) {
           f.flagged = true; f.recipient = "VENDOR";
           f.flag_reason = `Charged ${f.charged} instead of the agreed ${f.promised}; overcharge ${f.overcharge}.`;
           f.contact_reason = "Contact the VENDOR because this invoice line is above its agreed price.";
+        } else if (new Decimal(f.overcharge).lt(0)) {
+          f.note = "Below list price – check if this is a discount or staged billing.";
         }
       }
       findings.push(f);
