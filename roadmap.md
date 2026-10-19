@@ -1,7 +1,8 @@
 # Published invoice reading
-- [ ] Split lab invoice PDFs into single-page private uploads and sequential server requests with progress.
-- [ ] Extract and privately cache price lists separately; combine masked pages before saving the check.
-- [ ] Show step-specific failures; test and verify invoice/refund reading, then publish the update.
+- [x] Split lab invoice PDFs into single-page private uploads and sequential server requests with progress.
+- [x] Extract and privately cache price lists separately; combine masked pages before saving the check.
+- [x] Show step-specific failures; 90 tests pass and the saved ten-page invoice reads back with matching printed Orders subtotal.
+- [ ] Publish the update and check published invoice reading.
 
 # Message routing regression
 - [x] Correct refund recipients and exact single requests; keep vendor recipients separate.

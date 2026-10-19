@@ -51,12 +51,14 @@ function NewCheck() {
   const [billType, setBillType] = useState<"refund" | "lab_invoice">("refund");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function upload(f: File, kind: string) {
+  async function upload(f: File, kind: string): Promise<{ path: string; name: string; mime: "application/pdf" | "image/png" | "image/jpeg" | "image/webp" }> {
+    const mime = f.type;
+    if (mime !== "application/pdf" && mime !== "image/png" && mime !== "image/jpeg" && mime !== "image/webp") throw new Error("Unsupported file type.");
     const ext = f.name.split(".").pop() ?? "bin";
     const path = `${user.id}/${crypto.randomUUID()}-${kind}.${ext}`;
     const { error } = await supabase.storage.from("documents").upload(path, f, { contentType: f.type });
     if (error) throw error;
-    return { path, name: f.name, mime: f.type };
+    return { path, name: f.name, mime };
   }
 
   async function start() {
