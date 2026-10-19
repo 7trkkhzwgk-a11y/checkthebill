@@ -51,7 +51,7 @@ function NewCheck() {
   const [billType, setBillType] = useState<"refund" | "lab_invoice">("refund");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  async function upload(f: File, kind: string) {
+  async function upload(f: File, kind: string): Promise<{ path: string; name: string; mime: "application/pdf" | "image/png" | "image/jpeg" | "image/webp" }> {
     const mime = f.type;
     if (mime !== "application/pdf" && mime !== "image/png" && mime !== "image/jpeg" && mime !== "image/webp") throw new Error("Unsupported file type.");
     const ext = f.name.split(".").pop() ?? "bin";
