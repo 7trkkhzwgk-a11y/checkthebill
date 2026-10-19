@@ -7,7 +7,7 @@ const line = { id: "l", date: null, description: "Train ticket", amount: 7475.40
 function finding(bankRef = "") {
   const f = compareConfirmed([line], [{ ...promise, bank_ref: bankRef }], "2026-10-18").findings[0];
   if (!f) throw new Error("No finding");
-  return presentFinding(f, promise, "Example Bank", "INR");
+  return presentFinding(f, { ...promise, bank_ref: bankRef }, "Example Bank", "INR");
 }
 describe("result and message facts", () => {
   it("routes blank-reference refunds to IRCTC, never DEMO BANK, even with stale routing", () => {
