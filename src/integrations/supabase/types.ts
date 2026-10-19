@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_usage: {
+        Row: {
+          bill_id: string | null
+          created_at: string
+          id: string
+          model: string
+          reading_id: string | null
+          step: string
+          tokens: number
+          user_id: string
+        }
+        Insert: {
+          bill_id?: string | null
+          created_at?: string
+          id?: string
+          model: string
+          reading_id?: string | null
+          step: string
+          tokens?: number
+          user_id: string
+        }
+        Update: {
+          bill_id?: string | null
+          created_at?: string
+          id?: string
+          model?: string
+          reading_id?: string | null
+          step?: string
+          tokens?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_bill_id_fkey"
+            columns: ["bill_id"]
+            isOneToOne: false
+            referencedRelation: "bills"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       bills: {
         Row: {
           bill_total: number | null
@@ -167,6 +208,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      price_list_cache: {
+        Row: {
+          content_hash: string
+          created_at: string
+          extraction: Json
+          file_link: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          content_hash: string
+          created_at?: string
+          extraction: Json
+          file_link: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          content_hash?: string
+          created_at?: string
+          extraction?: Json
+          file_link?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       promises: {
         Row: {
