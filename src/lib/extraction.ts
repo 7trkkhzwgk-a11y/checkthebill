@@ -40,9 +40,13 @@ export const extractionSchema = z.object({
 export type Extraction = z.infer<typeof extractionSchema>;
 
 // Legacy saved inputs may omit these fields; the strict AI wire schema may not.
-const outputPromise = promise.extend({ pnr: z.string().nullable() });
+const outputLine = line.extend({ order_no: z.string().nullable(), tax_amount: z.number().nullable(), total_amount: z.number().nullable() });
+const outputPromise = promise.extend({ pnr: z.string().nullable(), notes: z.string().nullable() });
 export const extractionOutputSchema = extractionSchema.extend({
   currency: z.string().nullable(),
+  orders_subtotal: z.number().nullable(),
+  sales_tax: z.number().nullable(),
+  bill_lines: z.array(outputLine),
   refund: outputPromise.nullable(),
   agreed_items: z.array(outputPromise),
 });
