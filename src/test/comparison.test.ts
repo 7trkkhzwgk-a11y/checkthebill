@@ -135,8 +135,8 @@ describe("staged items", () => {
   it("treats rows marked staged in notes as staged", () => {
     const promises = [priceList("Framework", 4000, "Staged billing")];
     const result = compareConfirmed([invoiceLine("Framework", 4500)], promises, "2026-10-18");
-    expect(result.findings[0].flagged).toBe(false);
-    expect(result.findings[0].note).toContain("Staged");
+    expect(result.findings[0]?.flagged).toBe(false);
+    expect(result.findings[0]?.note).toContain("Staged");
   });
   it("still flags fixed-price items above the contract price in the same invoice", () => {
     const promises = [priceList("Partial denture", 5000), priceList("Crown", 1000)];
