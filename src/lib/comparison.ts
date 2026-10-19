@@ -310,6 +310,7 @@ export function countWordsChanged(draft: string, final: string): number {
 
 export function draftFacts(f: Finding) {
   return { recipient: f.contact_name ?? (f.recipient === "BANK" ? "your bank" : f.kind === "refund" ? "the merchant" : "the billing company"), item: f.kind === "invoice" ? f.invoice_item ?? f.item : f.item, pnr: f.pnr,
+    ...(f.typed_promise ? { typed_promise: true, tax_checks: f.tax_checks ?? [] } : {}),
     ...(f.kind === "invoice" ? { order_no: f.order_no ?? null } : {}),
     refund_promised: f.kind === "refund" ? f.promised : null,
     agreed_price: f.kind === "invoice" ? f.promised : null,

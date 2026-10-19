@@ -27,6 +27,7 @@ export async function answerQuestion(comparison: Comparison, currency: string | 
       credit_found: facts.credit_found == null ? null : formatCurrency(facts.credit_found, f.currency ?? currency),
       missing_amount: facts.missing_amount == null ? null : formatCurrency(facts.missing_amount, f.currency ?? currency),
       overcharge: facts.overcharge == null ? null : formatCurrency(facts.overcharge, f.currency ?? currency),
+      ...(f.typed_promise ? { tax_checks: (f.tax_checks ?? []).map(tax => ({ ...tax, taxable_amount: formatCurrency(tax.taxable_amount, f.currency ?? currency), expected: formatCurrency(tax.expected, f.currency ?? currency), billed: formatCurrency(tax.billed, f.currency ?? currency), difference: formatCurrency(tax.difference, f.currency ?? currency) })) } : {}),
       flagged: f.flagged, contact_reason: f.contact_reason, status: comparison.status,
       // Future timeframes the user asks about are computed in code, never by the AI.
       derived: deriveDaysWaiting(f.days_waiting, question),
@@ -38,7 +39,7 @@ export async function answerQuestion(comparison: Comparison, currency: string | 
   const ids = comparison.findings.flatMap((f) => [f.refund_id, f.transaction_id, f.bank_ref, f.pnr]).filter((id): id is string => !!id);
   const protectedText = maskWithIdentifiers(text, ids);
   // Guard money amounts only: every currency-looking number must be a code-calculated value for this case.
-  const amounts = comparison.findings.flatMap((f) => [f.promised, f.charged, f.credit_found, f.missing_amount, f.overcharge].map((v) => (v == null ? null : formatCurrency(v, f.currency ?? currency))));
+  const amounts = comparison.findings.flatMap((f) => [f.promised, f.charged, f.credit_found, f.missing_amount, f.overcharge, ...(f.tax_checks ?? []).flatMap(tax => [tax.taxable_amount, tax.expected, tax.billed, tax.difference])].map((v) => (v == null ? null : formatCurrency(v, f.currency ?? currency))));
   assertChatMoney(text, amounts, question);
   return protectedText;
 }

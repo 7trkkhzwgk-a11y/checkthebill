@@ -194,7 +194,7 @@ function CheckPage() {
                 ["bank_ref", "Bank Reference Id", "text"],
                 ["promised_on", "Refund / transaction date", "date"],
                 ["status_text", "Remark / status", "text"],
-              ] as const).map(([key, label, type]) => (
+              ] as const).filter(([key]) => !isTyped || ["source", "item", "promised_amount", "promised_on"].includes(key)).map(([key, label, type]) => (
                 <div key={key} className="min-w-0 space-y-2">
                   <Label htmlFor={`${p.id}-${key}`}>{label}</Label>
                   <Input id={`${p.id}-${key}`} type={type === "date" ? "text" : type} step={type === "number" ? "any" : undefined} className="font-mono text-sm" value={p[key] ?? ""} disabled={confirmed} onChange={(e) => setP(i, key, e.target.value)} />
