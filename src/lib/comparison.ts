@@ -25,7 +25,7 @@ export const reviewedPromiseSchema = z.object({
 export type ReviewedLine = z.infer<typeof reviewedLineSchema>;
 export type ReviewedPromise = z.infer<typeof reviewedPromiseSchema> & { promise_kind?: string | null };
 export type Finding = {
-  typed_promise?: boolean; tax_checks?: TaxCheck[];
+  typed_promise?: boolean; typed_stated_amount?: string; typed_tax_inclusive?: boolean | null; tax_checks?: TaxCheck[];
   order_no?: string | null; invoice_item?: string | null; disposition?: "matched" | "included" | "not_comparable" | "no_contract" | "staged";
   currency?: string | null; contact_name?: string | null; item?: string | null; pnr?: string | null; missing_amount?: string | null;
   kind: "refund" | "invoice"; promise_id: string; line_id: string | null;

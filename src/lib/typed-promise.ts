@@ -49,11 +49,13 @@ export function compareTypedPromises(lines: ReviewedLine[], promises: ReviewedPr
       }
     } else {
       const maths = typedTaxMath(p.promised_amount, details);
+      f.typed_stated_amount = new Decimal(p.promised_amount).toFixed(2);
+      f.typed_tax_inclusive = details.tax_inclusive;
       if (details.taxes.length && details.tax_inclusive === null) { f.issue = "Confirm whether the promised price includes tax."; issues.push(f.issue); }
       f.promised = maths.total;
       f.tax_checks = maths.taxes.map(tax => {
         const gst = /gst/i.test(tax.label);
-        const taxLines = lines.filter(l => l.type === "charge" && (gst ? /\b(?:[cis]?gst)\b/i.test(l.description ?? "") : (l.description ?? "").toLowerCase().includes(tax.label.toLowerCase())));
+        const taxLines = lines.filter(l => l.type === "charge" && (charges.length === 1 || (line.order_no && l.order_no === line.order_no)) && (gst ? /\b(?:[cis]?gst)\b/i.test(l.description ?? "") : (l.description ?? "").toLowerCase().includes(tax.label.toLowerCase())));
         const taxValue = taxLines.length && taxLines.every(l => l.amount != null) ? taxLines.reduce((sum, l) => sum.plus(l.amount ?? 0), new Decimal(0)) : details.taxes.length === 1 && line.tax_amount != null ? new Decimal(line.tax_amount) : null;
         const billed = taxValue?.toFixed(2) ?? null;
         return { label: tax.label, rate: tax.rate, taxable_amount: tax.taxable_amount, expected: tax.expected, billed, difference: billed == null ? null : new Decimal(billed).minus(tax.expected).toFixed(2) };
@@ -74,7 +76,7 @@ export function compareTypedPromises(lines: ReviewedLine[], promises: ReviewedPr
 
 export function typedPromiseDraft(f: Finding): string {
   const amount = (v: string | null | undefined) => formatCurrency(v, f.currency);
-  const statement = f.kind === "refund" ? `I was informed that a refund of ${amount(f.promised)} was promised${f.promised_on ? ` on ${f.promised_on}` : ""}. The credit found is ${amount(f.credit_found)}, leaving ${amount(f.missing_amount)} missing.` : `I was informed that the agreed total for ${f.item ?? "this item"} was ${amount(f.promised)}. The billed total is ${amount(f.charged)}.`;
+  const statement = f.kind === "refund" ? `I was informed that a refund of ${amount(f.promised)} was promised${f.promised_on ? ` on ${f.promised_on}` : ""}. The credit found is ${amount(f.credit_found)}, leaving ${amount(f.missing_amount)} missing.` : `I was informed that the agreed price for ${f.item ?? "this item"} was ${amount(f.typed_stated_amount ?? f.promised)}${f.tax_checks?.length ? f.typed_tax_inclusive ? " including tax" : " plus tax" : ""}. The expected total is ${amount(f.promised)}, and the billed total is ${amount(f.charged)}.`;
   const taxes = (f.tax_checks ?? []).filter(t => t.difference != null && !new Decimal(t.difference).isZero()).map(t => `${t.label}: expected ${amount(t.expected)}, billed ${amount(t.billed)}, difference ${amount(t.difference)}.`).join(" ");
   return `Subject: Please confirm the promise and billing\n\nDear ${f.contact_name ?? "the company"} Customer Care,\n\n${statement}${taxes ? ` ${taxes}` : ""} Please confirm what I was told and resolve this discrepancy.\n\nRegards,`;
 }
