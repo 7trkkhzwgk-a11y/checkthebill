@@ -3,12 +3,11 @@ import { zodSchema } from "ai";
 import { extractionOutputSchema } from "@/lib/extraction";
 import { extractionErrorMessage, MAX_DOCUMENT_BYTES, validateDocumentSize } from "@/lib/extraction-errors";
 
-const mock = vi.hoisted(() => ({ streamText: vi.fn(), responses: vi.fn(() => "model") }));
-vi.mock("ai", async (original) => ({ ...await original<typeof import("ai")>(), streamText: mock.streamText }));
-vi.mock("@ai-sdk/openai", () => ({ createOpenAI: () => ({ responses: mock.responses }) }));
+const mock = vi.hoisted(() => ({ completion: vi.fn() }));
+vi.mock("@/lib/ai/groq.server", () => ({ groqCompletion: mock.completion }));
 import { extractLines, extractInvoicePart, EXTRACTION_INSTRUCTION } from "@/lib/extract.server";
-
-beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("LOVABLE_API_KEY", "test-only"); });
+beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("GROQ_API_KEY", "test-only"); });
+const complete = { currency: "USD", issuer: "Synthetic Lab", source: "Synthetic Contract", bill_total: 190, orders_subtotal: null, sales_tax: null, bill_lines: [], promise_kind: "price_list", refund: null, agreed_items: [] };
 
 describe("complete extraction request", () => {
   it("requires every AI output property, including nullable currency and PNR", async () => {
@@ -30,45 +29,33 @@ describe("complete extraction request", () => {
     expect(extractionOutputSchema.shape.refund.unwrap().shape.pnr.isNullable()).toBe(true);
   });
 
-  it("includes both image and PDF bytes and existing instructions, returning only completed data", async () => {
-    const complete = { currency: "INR", issuer: "Rail", source: "Rail", bill_total: 7475.4, bill_lines: [], promise_kind: "refund", refund: null, agreed_items: [] };
-    let consumed = false;
-    mock.streamText.mockImplementation(() => ({
-      consumeStream: async () => { consumed = true; },
-      get output() { expect(consumed).toBe(true); return Promise.resolve(complete); },
-    }));
-    const result = await extractLines({ name: "bill.png", mime: "image/png", base64: "aW1hZ2U=" }, { name: "promise.pdf", mime: "application/pdf", base64: "cGRm" });
-    expect(result).toEqual(complete);
-    const call = mock.streamText.mock.calls[0]?.[0];
-    expect(call.instructions).toContain(EXTRACTION_INSTRUCTION);
-    expect(call.messages[0].content[1].image.href).toBe("data:image/png;base64,aW1hZ2U=");
-    expect(call.messages[0].content[3]).toEqual({ type: "file", filename: "promise.pdf", data: "cGRm", mediaType: "application/pdf" });
+  it("sends image data and code-extracted PDF text using Scout, never raw PDFs", async () => {
+    mock.completion.mockResolvedValue(JSON.stringify(complete));
+    expect(await extractLines({ name: "bill.png", mime: "image/png", base64: "aW1hZ2U=" }, { name: "promise.txt", mime: "text/plain", text: "Synthetic contract text" })).toEqual(complete);
+    const call = mock.completion.mock.calls[0];
+    expect(call?.[1]).toBe("meta-llama/llama-4-scout-17b-16e-instruct");
+    expect(call?.[2]).toContain(EXTRACTION_INSTRUCTION);
+    expect(call?.[3][1]).toEqual({ type: "image_url", image_url: { url: "data:image/png;base64,aW1hZ2U=" } });
+    expect(call?.[3][3]).toEqual({ type: "text", text: "Synthetic contract text" });
   });
-
-  it("surfaces the upstream 429 instead of an empty-output validation error", async () => {
-    mock.streamText.mockImplementation((options) => ({
-      consumeStream: async () => { options.onError({ error: { statusCode: 429, message: "rate limited" } }); },
-      get output() { throw new Error("No output generated. Check the stream for errors."); },
-    }));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(extractLines({ name: "b.png", mime: "image/png", base64: "Yg==" }, { name: "p.png", mime: "image/png", base64: "cA==" })).rejects.toThrow("temporarily rate limited");
-    expect(mock.streamText.mock.calls[0]?.[0].maxRetries).toBe(0);
-    vi.restoreAllMocks();
+  it("does not hide exhausted rate limits behind JSON validation", async () => {
+    mock.completion.mockRejectedValue(new Error("Busy – try again in a minute"));
+    await expect(extractInvoicePart({ name: "b.txt", mime: "text/plain", text: "Synthetic" }, "invoice")).rejects.toThrow("Busy – try again in a minute");
   });
-
-  it("reads the price list separately and preserves the final order context for a continued invoice page", async () => {
-    mock.streamText.mockImplementation(() => ({ consumeStream: async () => {}, output: Promise.resolve({}) }));
-    const file = { name: "synthetic.pdf", mime: "application/pdf", base64: "cGRm" };
+  it("reads price lists separately and passes continued-order context", async () => {
+    mock.completion.mockResolvedValue(JSON.stringify(complete));
+    const file = { name: "synthetic.txt", mime: "text/plain", text: "Synthetic" };
     await extractInvoicePart(file, "price_list");
-    const price = mock.streamText.mock.calls[0]?.[0];
-    expect(price.messages[0].content.filter((p: { type: string }) => p.type === "file")).toHaveLength(1);
-    expect(price.instructions).toContain("only the PROMISE contract/price list");
+    expect(mock.completion.mock.calls[0]?.[2]).toContain("only the PROMISE price list/contract");
     await extractInvoicePart(file, "invoice", "SYN-ORDER-A");
-    const invoice = mock.streamText.mock.calls[1]?.[0];
-    expect(invoice.instructions).toContain('"SYN-ORDER-A"');
-    expect(invoice.instructions).toContain(EXTRACTION_INSTRUCTION);
-    expect(invoice.maxRetries).toBe(0);
+    expect(mock.completion.mock.calls[1]?.[2]).toContain('"SYN-ORDER-A"');
   });
+  it("rejects malformed structuring without retrying", async () => {
+    mock.completion.mockResolvedValue('{"bill_lines":[]}');
+    await expect(extractInvoicePart({ name: "synthetic.txt", mime: "text/plain", text: "Synthetic" }, "invoice")).rejects.toThrow("incomplete or invalid");
+    expect(mock.completion).toHaveBeenCalledTimes(1);
+  });
+
 });
 
 describe("extraction errors", () => {
