@@ -81,6 +81,23 @@ export const getCheckResult = createServerFn({ method: "POST" })
       if (saveError) throw new Error("Couldn't save the updated lab summary.");
     }
     if (comparison) comparison.findings = comparison.findings.map((f) => presentFinding(f, p.data?.find((r) => r.id === f.promise_id), b.data.issuer, b.data.currency));
+    // Rebuild untouched combined drafts from the refreshed review bucket, not stale unmatched lines.
+    if (comparison && b.data.bill_type === "lab_invoice") {
+      const review = comparison.findings.filter((f) => f.kind === "invoice" && f.disposition === "no_contract");
+      const firstReview = review[0];
+      if (firstReview?.line_id) {
+        const recipient = firstReview.contact_name ?? b.data.issuer ?? "the vendor";
+        const draft_text = maskWithIdentifiers(invoiceReviewDraft(review, recipient, b.data.currency), review.map((f) => f.order_no ?? null));
+        for (const message of messages.data ?? []) {
+          if (message.draft_version !== REVIEW_DRAFT_VERSION || message.sent || message.declined_at || message.final_text !== null) continue;
+          if (message.draft_text === draft_text && message.line_id === firstReview.line_id) continue;
+          const row = { draft_text, sent_to: recipient, line_id: firstReview.line_id };
+          const { error: draftError } = await supabase.from("messages").update(row).eq("id", message.id).eq("user_id", userId).eq("sent", false).is("final_text", null).is("declined_at", null);
+          if (draftError) throw new Error("Couldn't update the review message.");
+          Object.assign(message, row);
+        }
+      }
+    }
     const usage = await supabase.from("ai_usage").select("tokens").eq("bill_id", data.billId).eq("user_id", userId);
     if (usage.error) throw new Error("Couldn't read AI usage.");
     return { aiTokens: (usage.data ?? []).reduce((n, row) => n + row.tokens, 0), bill: { ...b.data, comparison_result: comparison }, lines: l.data ?? [], messages: messages.data ?? [] };

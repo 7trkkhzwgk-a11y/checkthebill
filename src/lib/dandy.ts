@@ -16,9 +16,9 @@ const isShortWord = (word: string) => /^[a-z]{1,2}$/i.test(word) || /^[\W\d]{1,2
 function isSpacedFragment(words: string[]) {
   if (words.length < 2) return false;
   if (words.filter(isShortWord).length / words.length >= 0.6) return true;
-  if (!/^[a-z]$/i.test(words[0])) return false;
+  if (!/^[a-z]$/i.test(words[0] ?? "")) return false;
   const rest = words.slice(1);
-  return rest.every((w) => w.length <= 4) && (rest.length >= 2 || rest[0].length <= 3);
+  return rest.every((w) => w.length <= 4) && (rest.length >= 2 || (rest[0]?.length ?? 0) <= 3);
 }
 const squash = (text: string) => text.replace(/\s+/g, "");
 
@@ -49,7 +49,9 @@ function moneyValues(text: string) {
     // A dash only means "negative" when it stands alone, not when it joins words ("29-31", "Chrome-").
     const before = text.slice(0, at).replace(/\s-$/, "").slice(-1);
     const negative = dash && !/[\w-]/.test(before);
-    found.push({ negative, value: Number(match[2].replace(/,/g, "")), raw: match[0], start: at });
+    const digits = match[2];
+    if (!digits) continue;
+    found.push({ negative, value: Number(digits.replace(/,/g, "")), raw: match[0], start: at });
   }
   return found;
 }
@@ -105,16 +107,18 @@ export function parseDandyInvoice(text: string): Extraction {
 
     if (header) {
       const [, month, day, year, orderNo, tail] = header;
+      if (!month || !day || !year || !orderNo) continue;
       order = { date: iso(month, day, year), order_no: orderNo, tax: null, total: null };
       // Lab order headings carry the doctor and status; credit headings carry the reason.
       pending = /credit\s+for/i.test(tail ?? "") ? (tail ?? "").replace(/^[-–—]\s*/, "").trim() : "";
       inCredits = inCredits || /credit\s+for/i.test(tail ?? "");
       sawOrder = true;
-      const onLine = amounts.filter((m) => m.start >= header.index! + header[0].indexOf(tail ?? ""));
+      const onLine = amounts.filter((m) => m.start >= (header.index ?? 0) + header[0].indexOf(tail ?? ""));
       if (onLine.length >= 2) {
         const last = onLine.slice(-3);
-        if (last.length === 3) { order.tax = magnitude(last[1]); order.total = magnitude(last[2]); }
-        else order.total = magnitude(last[1]);
+        const [, taxOrTotal, total] = last;
+        if (taxOrTotal && total) { order.tax = magnitude(taxOrTotal); order.total = magnitude(total); }
+        else if (taxOrTotal) order.total = magnitude(taxOrTotal);
       }
       continue;
     }
@@ -124,21 +128,23 @@ export function parseDandyInvoice(text: string): Extraction {
 
     if (!sawOrder) {
       // The summary block sits above the order table.
-      if (/^Orders\b/i.test(raw) && amounts.length) { ordersSubtotal = amounts[0].value; continue; }
-      if (/^Credits & Refunds\b/i.test(raw) && amounts.length) { creditsPrinted = magnitude(amounts[0]); continue; }
-      if (/^Sales Tax\b/i.test(raw) && amounts.length) { salesTax = amounts[0].value; continue; }
-      if (/^Total Balance\b/i.test(raw) && amounts.length) { billTotal = amounts[0].value; continue; }
+      const first = amounts[0];
+      if (/^Orders\b/i.test(raw) && first) { ordersSubtotal = first.value; continue; }
+      if (/^Credits & Refunds\b/i.test(raw) && first) { creditsPrinted = magnitude(first); continue; }
+      if (/^Sales Tax\b/i.test(raw) && first) { salesTax = first.value; continue; }
+      if (/^Total Balance\b/i.test(raw) && first) { billTotal = first.value; continue; }
     }
-    if (/^Subtotal - Lab Work\b/i.test(raw) && amounts.length >= 2) { ordersSubtotal ??= amounts[0].value; salesTax ??= amounts[1].value; continue; }
-    if (/^Subtotal - Credits & Refunds\b/i.test(raw) && amounts.length) { creditsPrinted ??= magnitude(amounts[0]); continue; }
+    const [firstAmount, secondAmount] = amounts;
+    if (/^Subtotal - Lab Work\b/i.test(raw) && firstAmount && secondAmount) { ordersSubtotal ??= firstAmount.value; salesTax ??= secondAmount.value; continue; }
+    if (/^Subtotal - Credits & Refunds\b/i.test(raw) && firstAmount) { creditsPrinted ??= magnitude(firstAmount); continue; }
 
     if (!order) { pending = joinText(pending, raw); continue; }
 
     // Credit rows print the doctor before the amount, so only the saved reason is kept.
-    if (inCredits && amounts.length) {
+    if (inCredits && firstAmount) {
       out.bill_lines.push(line({
-        date: order.date, description: pending.replace(/^[-–—]\s*/, "").trim(), amount: magnitude(amounts[0]),
-        type: "credit", order_no: order.order_no, tax_amount: null, total_amount: magnitude(amounts[0]),
+        date: order.date, description: pending.replace(/^[-–—]\s*/, "").trim(), amount: magnitude(firstAmount),
+        type: "credit", order_no: order.order_no, tax_amount: null, total_amount: magnitude(firstAmount),
       }));
       pending = "";
       continue;
@@ -147,14 +153,15 @@ export function parseDandyInvoice(text: string): Extraction {
     // The wrapped "Open Order" column prints the order's price, tax and total before any item lines.
     if (amounts.length >= 2 && order.tax === null && order.total === null) {
       const last = amounts.slice(-3);
-      if (last.length === 3) { order.tax = magnitude(last[1]); order.total = magnitude(last[2]); }
-      else order.total = magnitude(last[1]);
+      const [, taxOrTotal, total] = last;
+      if (taxOrTotal && total) { order.tax = magnitude(taxOrTotal); order.total = magnitude(total); }
+      else if (taxOrTotal) order.total = magnitude(taxOrTotal);
       pending = "";
       continue;
     }
 
-    if (amounts.length === 1) {
-      const money = amounts[0];
+    if (amounts.length === 1 && firstAmount) {
+      const money = firstAmount;
       const before = raw.slice(0, money.start).replace(/\s+/g, " ").trim();
       const description = joinText(pending, before).replace(/^[-–—]\s*/, "").replace(/\s+/g, " ").trim();
       pending = "";

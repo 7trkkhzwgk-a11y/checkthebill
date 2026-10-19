@@ -114,7 +114,7 @@ describe("parseDandyInvoice", () => {
 
   it("reconciles items, tax once per order, credits and total against the printed summary", () => {
     const lines = parsed.bill_lines.map((l, i) => ({ id: `00000000-0000-4000-8000-0000000000${i}`, date: l.date, description: l.description, amount: l.amount, type: l.type ?? "charge", reference_no: null, bank_ref: null, order_no: l.order_no, tax_amount: l.tax_amount, total_amount: l.total_amount }));
-    const check = reconcileInvoice(lines, parsed.orders_subtotal ?? null, { sales_tax: parsed.sales_tax, bill_total: parsed.bill_total });
+    const check = reconcileInvoice(lines, parsed.orders_subtotal ?? null, { sales_tax: parsed.sales_tax ?? null, bill_total: parsed.bill_total });
     expect(check).toMatchObject({ items_total: "400.00", orders_subtotal: "400.00", matches: true, tax_total: "36.00", tax_matches: true, credits_total: "20.00", credits_matches: true, total: "416.00", total_matches: true });
     expect(check.tax_conflicts).toEqual([]);
   });
