@@ -6,6 +6,9 @@ export const reviewedLineSchema = z.object({
   id: z.string().uuid(), date: z.string().nullable(), description: z.string().max(2000).nullable(),
   amount: z.number().finite().nonnegative().nullable(), type: z.enum(["charge", "credit"]),
   reference_no: z.string().max(500).nullable(), bank_ref: z.string().max(500).nullable(),
+  order_no: z.string().max(500).nullable().optional(),
+  tax_amount: z.number().finite().nonnegative().nullable().optional(),
+  total_amount: z.number().finite().nonnegative().nullable().optional(),
 });
 export const reviewedPromiseSchema = z.object({
   pnr: z.string().max(500).nullable().optional(),
@@ -13,6 +16,7 @@ export const reviewedPromiseSchema = z.object({
   original_charge: z.number().finite().nonnegative().nullable(), promised_amount: z.number().finite().nonnegative().nullable(),
   reference_no: z.string().max(500).nullable(), transaction_id: z.string().max(500).nullable(),
   bank_ref: z.string().max(500).nullable(), status_text: z.string().max(2000).nullable(), source: z.string().max(2000).nullable(),
+  notes: z.string().max(2000).nullable().optional(),
 });
 export type ReviewedLine = z.infer<typeof reviewedLineSchema>;
 export type ReviewedPromise = z.infer<typeof reviewedPromiseSchema> & { promise_kind?: string | null };
@@ -23,7 +27,7 @@ export type Finding = {
   credit_expected: string | null; credit_found: string | null; overcharge: string | null;
   promised_on: string | null; days_waiting: number | null;
   refund_id: string | null; transaction_id: string | null; bank_ref: string | null;
-  flagged: boolean; flag_reason: string | null; recipient: "MERCHANT" | "BANK" | "VENDOR" | null;
+  flagged: boolean; flag_reason: string | null; note: string | null; recipient: "MERCHANT" | "BANK" | "VENDOR" | null;
   contact_reason: string | null; issue: string | null;
 };
 export type Comparison = { checked_on: string; findings: Finding[]; issues: string[]; status: "flagged" | "clear" | "incomplete" };
@@ -31,6 +35,65 @@ export const money = (value: number | string) => new Decimal(value).toFixed(2);
 const equalMoney = (a: number | null, b: number | null) => a !== null && b !== null && new Decimal(a).eq(b);
 const equalRef = (a: string | null, b: string | null) => !!a?.trim() && !!b?.trim() && a.trim() === b.trim();
 const itemKey = (item: string | null) => item?.trim().replace(/\s+/g, " ").toLocaleLowerCase() ?? "";
+
+// A price-list row is comparable only when it carries one fixed agreed price.
+export function isComparablePromise(p: Pick<ReviewedPromise, "item" | "promised_amount" | "notes">): boolean {
+  const text = `${p.item ?? ""} ${p.notes ?? ""}`;
+  if (p.promised_amount === null) return false;
+  if (/\+\s*alloy|\bn\/?a\b/i.test(text)) return false;
+  if (/\d[\d,.]*\s*(?:-|–|—|to)\s*\d[\d,.]*/.test(text)) return false;
+  return true;
+}
+
+const STOPWORDS = new Set(["the", "a", "an", "of", "for", "and", "with", "per", "item", "each", "tooth", "teeth", "no", "type"]);
+const tokens = (text: string | null) => (text ?? "").toLocaleLowerCase().replace(/\(\s*x\s*\d+\s*\)/g, " ").split(/[^a-z0-9]+/).filter((t) => t && !STOPWORDS.has(t));
+
+// "(x2)" / "x2" marks quantity; teeth on both sides of the arch midline mean bilateral (quantity 2 for unilateral prices).
+export function lineQuantity(description: string | null): number {
+  const text = description ?? "";
+  const explicit = text.match(/\(\s*x\s*(\d+)\s*\)|\bx\s*(\d+)\b/i);
+  if (explicit) return Math.max(1, Number(explicit[1] ?? explicit[2]));
+  if (isBilateral(text) && !/bilateral|both\s+sides|full\s+arch/i.test(text)) return 2;
+  return 1;
+}
+// FDI/universal tooth numbers on both left (2x, 3x or 17-32) and right (1x, 4x or 1-16) of the midline.
+export function isBilateral(description: string | null): boolean {
+  const text = (description ?? "").toLocaleLowerCase();
+  if (/bilateral|both\s+sides/.test(text)) return true;
+  const numbers = (text.match(/\b(?:[1-4][1-8]|[1-9]|[12]\d|3[0-2])\b/g) ?? []).map(Number).filter((n) => (n >= 11 && n <= 48) || (n >= 1 && n <= 32));
+  const side = (n: number) => (n >= 11 && n <= 48 ? (n >= 11 && n <= 18) || (n >= 41 && n <= 48) : n <= 16);
+  return numbers.some((n) => side(n)) && numbers.some((n) => !side(n));
+}
+
+export type ItemMatch = { line_id: string; promise_id: string | null; confidence: number; quantity: number };
+export const MATCH_CONFIDENCE_THRESHOLD = 0.5;
+
+// Keyword overlap between the invoice item and each comparable price-list row; best unique score wins.
+export function matchInvoiceItems(lines: Pick<ReviewedLine, "id" | "description" | "type">[], promises: ReviewedPromise[]): ItemMatch[] {
+  const comparable = promises.filter((p) => !!itemKey(p.item) && isComparablePromise(p));
+  return lines.filter((l) => l.type === "charge").map((line) => {
+    const quantity = lineQuantity(line.description);
+    const lineTokens = tokens(line.description);
+    const bilateral = isBilateral(line.description);
+    let best: ReviewedPromise | null = null;
+    let bestScore = 0;
+    let tied = false;
+    for (const p of comparable) {
+      const promiseTokens = tokens(p.item);
+      const overlap = lineTokens.filter((t) => promiseTokens.some((pt) => pt === t || pt.startsWith(t) || t.startsWith(pt))).length;
+      let score = lineTokens.length ? overlap / lineTokens.length : 0;
+      if (/bilateral|unilateral/i.test(p.item ?? "")) {
+        const promiseBilateral = /bilateral|full\s+arch/i.test(p.item ?? "");
+        score += promiseBilateral === bilateral ? 0.15 : -0.15;
+      }
+      score = Math.min(1, Math.max(0, score));
+      if (score > bestScore + 1e-9) { best = p; bestScore = score; tied = false; }
+      else if (Math.abs(score - bestScore) <= 1e-9 && score > 0) tied = true;
+    }
+    if (tied || bestScore < MATCH_CONFIDENCE_THRESHOLD) return { line_id: line.id, promise_id: null, confidence: Math.round(bestScore * 100) / 100, quantity };
+    return { line_id: line.id, promise_id: best?.id ?? null, confidence: Math.round(bestScore * 100) / 100, quantity };
+  });
+}
 
 // Invoked only at the authenticated server confirmation boundary; AI never computes these values.
 export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string): Comparison {
