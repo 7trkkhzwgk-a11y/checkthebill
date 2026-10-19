@@ -258,11 +258,12 @@ export function parseDandyPriceList(text: string): Extraction {
       continue;
     }
     if (/^OEM component surcharge:/i.test(raw)) { const amount = moneyValues(raw)[0]; save("OEM component surcharge", amount?.value ?? null, "Per abutment"); continue; }
-    if (SECTION_TITLES.test(raw)) { pending = ""; continue; }
+    if (SECTION_TITLES.test(raw) || /^(?:Material|Type|Option)\s+(?:Price|Requirements|Custom|Free|Included)/i.test(raw)) { pending = ""; continue; }
     const amounts = moneyValues(raw);
     const na = raw.match(/(?:^|\s)(N\/?A)(?=\s|$)/i);
     if (!amounts.length && !na) {
       // Preserve the first item line across wrapped requirements and standalone price lines.
+      if (!pending && /^(?:exact alloy|denture,|Dandy for alterations|Abutment$|Sleeve\(s\)$)/i.test(raw)) continue;
       if (!pending || /^(?:New Dentures & Overdentures|Dandy (?:Print|Treatment|Tooth|Tissue))/i.test(raw)) pending = raw;
       else pending = joinText(pending, raw);
       continue;
@@ -283,7 +284,7 @@ export function parseDandyPriceList(text: string): Extraction {
     if (requirements) name = `${name.slice(0, requirements.index)} – ${/reference/i.test(requirements[1] ?? "") ? "reference" : "wax bite rim"} workflow`;
     // N/A in the Requirements column does not mean the printed price is unavailable.
     if (amounts.length && /^Full Dentures/i.test(section)) name = name.replace(/\s+N\/?A\b.*$/i, "").trim();
-    if (/^Implant surgery.*Options/i.test(section)) name = name.replace(/\*?(?:\s+(?:Surgical Guide Fabrication|Treatment Planning)).*$/i, "").replace(/\*$/, "").trim();
+    if (/^Implant surgery.*Options/i.test(section)) name = name.match(/^Dandy (?:Print-Only|Treatment Planning|Tooth Supported Guide|Tissue Supported Guide)/i)?.[0] ?? name;
     if (!name || SECTION_TITLES.test(name)) continue;
 
     const tail = raw.slice(cut).replace(/\s+/g, " ").trim();

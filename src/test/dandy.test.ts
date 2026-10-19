@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDandyDocument, parseDandyInvoice, parseDandyPriceList, readLine } from "@/lib/dandy";
+import { isDandyDocument, parseDandyInvoice, parseDandyPriceList, priceListItemName, priceListSectionCounts, readLine } from "@/lib/dandy";
 import { isComparablePromise, lineQuantity, reconcileInvoice } from "@/lib/comparison";
 import { maskedExtraction } from "@/lib/invoice-extraction";
 
@@ -131,14 +131,14 @@ describe("parseDandyPriceList", () => {
   const parsed = parseDandyPriceList(PRICE_LIST);
 
   it("saves one row per item with its fixed agreed price", () => {
-    const zirconia = parsed.agreed_items.find((p) => p.item === "Zirconia Monolithic");
+    const zirconia = parsed.agreed_items.find((p) => priceListItemName(p) === "Zirconia Monolithic");
     expect(zirconia?.promised_amount).toBe(75);
     expect(isComparablePromise({ item: zirconia?.item ?? null, promised_amount: zirconia?.promised_amount ?? null, notes: zirconia?.notes ?? null })).toBe(true);
   });
 
   it("marks + Alloy, N/A, price ranges and multi-column rows as not comparable", () => {
     for (const name of ["PFM - Noble - White", "Composite Stent", "Model 1 per order", "Full Contour Zirconia"]) {
-      const row = parsed.agreed_items.find((p) => p.item === name);
+      const row = parsed.agreed_items.find((p) => priceListItemName(p) === name);
       expect(row, name).toBeTruthy();
       expect(isComparablePromise({ item: row?.item ?? null, promised_amount: row?.promised_amount ?? null, notes: row?.notes ?? null }), name).toBe(false);
     }
