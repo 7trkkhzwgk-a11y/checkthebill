@@ -6,6 +6,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { resetRedirectTo } from "@/lib/password-reset";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -28,10 +29,13 @@ function AuthPage() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setResetSent(false);
     try {
       if (mode === "in") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -53,11 +57,37 @@ function AuthPage() {
     }
   }
 
+  async function sendReset() {
+    const address = email.trim().toLowerCase();
+    if (!address) {
+      toast.error("Type your email first, then choose Forgot password.");
+      return;
+    }
+    setResetBusy(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(address, {
+        redirectTo: resetRedirectTo(window.location.origin),
+      });
+      if (error) throw error;
+      setResetSent(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not send a reset link.");
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
   return (
     <div className="min-h-screen">
       <AppHeader signedIn={false} />
       <div className="mx-auto max-w-sm px-4 py-16">
         <h1 className="text-2xl font-bold">{mode === "in" ? "Sign in" : "Create account"}</h1>
+        {resetSent && (
+          <p className="mt-6 rounded-md border border-border bg-card p-4 text-sm">
+            If that email has a BillShield account, a reset link is on its way. Open it to choose a
+            new password.
+          </p>
+        )}
         {sent ? (
           <p className="mt-6 rounded-md border border-border bg-card p-4 text-sm">
             Check your email to confirm your account, then sign in.
@@ -75,12 +105,22 @@ function AuthPage() {
             <Button type="submit" className="w-full" disabled={busy}>
               {busy ? "Please wait…" : mode === "in" ? "Sign in" : "Sign up"}
             </Button>
+            {mode === "in" && (
+              <button
+                type="button"
+                onClick={sendReset}
+                disabled={resetBusy}
+                className="block w-full text-center text-sm text-muted-foreground underline hover:text-foreground disabled:opacity-60"
+              >
+                {resetBusy ? "Sending…" : "Forgot password?"}
+              </button>
+            )}
           </form>
         )}
         <button
           type="button"
           className="mt-4 text-sm text-muted-foreground underline"
-          onClick={() => { setMode(mode === "in" ? "up" : "in"); setSent(false); }}
+          onClick={() => { setMode(mode === "in" ? "up" : "in"); setSent(false); setResetSent(false); }}
         >
           {mode === "in" ? "No account? Sign up" : "Have an account? Sign in"}
         </button>
