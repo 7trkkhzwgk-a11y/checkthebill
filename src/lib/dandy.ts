@@ -61,8 +61,9 @@ const joinText = (pending: string, next: string) => {
   const addition = next.trim();
   if (!pending) return addition;
   if (!addition) return pending;
-  // A description wrapped after a hyphen ("Chrome-" / "Cobalt") is one word, not two.
-  return /[-–—]$/.test(pending) && !/\s$/.test(pending) ? `${pending}${addition}` : `${pending} ${addition}`;
+  // A description wrapped after a hyphenated word ("Chrome-" / "Cobalt") is one word; a dash that
+  // stands on its own ("… and 30 -" / "Chrome-Cobalt") keeps its space.
+  return /[\w][-–—]$/.test(pending) ? `${pending}${addition}` : `${pending} ${addition}`;
 };
 
 export function isDandyDocument(text: string) {
