@@ -3,13 +3,13 @@ import { GROQ_MAX_RETRIES, GROQ_MAX_TOKENS, GROQ_REASONING_EFFORT, groqRetryDela
 export type GroqPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 export type UsageSink = (tokens: number, model: string) => Promise<void>;
 
-export async function groqCompletion(apiKey: string, model: string, instructions: string, content: string | GroqPart[], json = false, usage?: UsageSink) {
+export async function groqCompletion(apiKey: string, model: string, instructions: string, content: string | GroqPart[], json = false, usage?: UsageSink, options: { maxTokens?: number; reasoningEffort?: string } = {}) {
   if (!apiKey) throw new Error("Groq is not configured. The app owner needs to add GROQ_API_KEY securely.");
   for (let attempt = 0; attempt <= GROQ_MAX_RETRIES; attempt++) {
     let response: Response;
     try { response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, stream: false, max_tokens: GROQ_MAX_TOKENS, reasoning_effort: GROQ_REASONING_EFFORT, messages: [{ role: "system", content: instructions }, { role: "user", content }], ...(json ? { response_format: { type: "json_object" } } : {}) }),
+      body: JSON.stringify({ model, stream: false, max_tokens: options.maxTokens ?? GROQ_MAX_TOKENS, reasoning_effort: options.reasoningEffort ?? GROQ_REASONING_EFFORT, messages: [{ role: "system", content: instructions }, { role: "user", content }], ...(json ? { response_format: { type: "json_object" } } : {}) }),
     }); } catch {
       throw new Error("Couldn't connect to Groq. Check the GROQ_API_KEY in the secure secret form and try again.");
     }
@@ -22,7 +22,7 @@ export async function groqCompletion(apiKey: string, model: string, instructions
     const body = await response.json() as { error?: { message?: string }; choices?: { finish_reason?: string; message?: { content?: string; refusal?: string } }[]; usage?: { total_tokens?: number } };
     if (!response.ok) {
       // No response bodies, keys or document content are logged.
-      console.error("Groq request failed", { status: response.status, model });
+      console.error("Groq request failed", { status: response.status, model, error: body.error?.message ?? null });
       if (response.status === 401) throw new Error("Groq rejected the API key. The app owner needs to update GROQ_API_KEY securely.");
       throw new Error(body.error?.message ?? `Groq returned error ${response.status}.`);
     }
