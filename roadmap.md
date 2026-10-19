@@ -1,4 +1,6 @@
 # Fixed invoice aliases
+- [ ] Fix section-aware price-list parsing, starred prices and saved counts; extend aliases and show three nearest names for unmatched items.
+- [ ] Replace the owner's old saved price list from the original file and verify matching, counts, reconciliation and review-only messages.
 - [x] Apply exact aliases before fuzzy matching, preserving quantities, included and staged rules.
 - [x] Verify dispute item filtering with synthetic tests; refresh untouched saved review drafts; 125 tests pass and build OK.
 - [x] Verify saved results while signed in: aliases for existing contract rows work, but the saved price list lacks both Signature workflow entries, so 11 wax-rim bundle lines remain review. Reconciliation remains correct; review draft excludes matched/staged/included lines.
