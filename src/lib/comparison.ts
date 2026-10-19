@@ -96,7 +96,7 @@ export function matchInvoiceItems(lines: Pick<ReviewedLine, "id" | "description"
 }
 
 // Invoked only at the authenticated server confirmation boundary; AI never computes these values.
-export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string): Comparison {
+export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string, billTotals?: { orders_subtotal: number | null; sales_tax: number | null }): Comparison {
   if (!toDate(today)) throw new Error("Invalid comparison date.");
   const findings: Finding[] = [];
   const issues: string[] = [];
@@ -108,8 +108,21 @@ export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromis
     kept_by_merchant: null, credit_expected: null, credit_found: null, overcharge: null,
     promised_on: toDate(p.promised_on), days_waiting: p.promised_on && toDate(p.promised_on) ? Math.floor((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${p.promised_on}T00:00:00Z`)) / 86400000) : null,
     refund_id: p.reference_no, transaction_id: p.transaction_id, bank_ref: p.bank_ref ?? "", pnr: p.pnr ?? null, item: p.item,
-    flagged: false, flag_reason: null, recipient: null, contact_reason: null, issue: null,
+    flagged: false, flag_reason: null, note: null, recipient: null, contact_reason: null, issue: null,
   });
+  const chargeLines = lines.filter((l) => l.type === "charge");
+  if (billTotals?.orders_subtotal != null) {
+    const itemSum = chargeLines.reduce((sum, l) => sum.plus(l.amount ?? 0), new Decimal(0));
+    if (chargeLines.length && !itemSum.eq(new Decimal(billTotals.orders_subtotal))) {
+      issues.push(`The pre-tax item prices add up to ${itemSum.toFixed(2)}, but the invoice Orders subtotal is ${money(billTotals.orders_subtotal)}. Check the lines before trusting this comparison.`);
+    }
+  }
+  if (billTotals?.sales_tax != null) {
+    const taxSum = chargeLines.reduce((sum, l) => sum.plus(l.tax_amount ?? 0), new Decimal(0));
+    if (taxSum.gt(0) && !taxSum.eq(new Decimal(billTotals.sales_tax))) {
+      issues.push(`The order-level sales tax adds up to ${taxSum.toFixed(2)}, but the invoice Sales Tax total is ${money(billTotals.sales_tax)}. Check the tax amounts.`);
+    }
+  }
   for (const p of refunds) {
     const f = base(p, "refund");
     const charges = lines.filter((l) => l.type === "charge");
