@@ -11,6 +11,7 @@ import { getCheckResult, generateCheckDrafts, saveMessageDecision, askCheckQuest
 import { reconcileInvoice, type Finding } from "@/lib/comparison";
 import { DRAFT_VERSION, formatCurrency } from "@/lib/message-format";
 import type { Tables } from "@/integrations/supabase/types";
+import { invoiceSummary, REVIEW_DRAFT_VERSION } from "@/lib/invoice-results";
 
 const resultQuery = (billId: string) => queryOptions({ queryKey: ["check-result", billId], queryFn: () => getCheckResult({ data: { billId } }) });
 
@@ -108,6 +109,7 @@ function ResultPage() {
   const reconciliation = data.bill.bill_type === "lab_invoice" ? comparison.reconciliation ?? reconcileInvoice(data.lines, data.bill.orders_subtotal) : null;
   const missingDraft = comparison.findings.some((f) => f.flagged && !data.messages.some((m) => m.line_id === f.line_id));
   const outdatedDraft = data.messages.some((m) => !m.sent && !m.declined_at && m.final_text === null && m.draft_version !== DRAFT_VERSION);
+  if (data.bill.bill_type === "lab_invoice") return <LabResults data={data} billId={billId} busy={busy} draft={draft} />;
   return <main className="mx-auto max-w-3xl px-4 py-10"><div className="flex flex-wrap items-center justify-between gap-4"><p className="font-mono text-xs uppercase text-muted-foreground">BillShield / Check result</p><Button asChild variant="outline" size="sm"><Link to="/new">New check</Link></Button></div>
     <div className="mt-8 flex items-start gap-3">{comparison.status === "clear" ? <CheckCircle2 className="mt-1 h-7 w-7 shrink-0 text-success" /> : <AlertTriangle className="mt-1 h-7 w-7 shrink-0 text-destructive" />}<div className="min-w-0"><h1 className="text-3xl font-bold">{comparison.status === "clear" ? (data.bill.bill_type === "lab_invoice" ? "No overcharges found on fixed-price items" : "Nothing wrong with this bill") : comparison.status === "flagged" ? "This line doesn't add up" : "This check needs more information"}</h1>{data.bill.issuer && <p className="mt-2 break-words text-muted-foreground">{data.bill.issuer}</p>}<p className="mt-2 text-xs text-muted-foreground">Checked on {comparison.checked_on}</p></div></div>
     {reconciliation && <p className="mt-6 border-y border-border py-4 font-mono text-sm">Items total {formatCurrency(reconciliation.items_total, data.bill.currency)} vs invoice Orders {formatCurrency(reconciliation.orders_subtotal, data.bill.currency)} {reconciliation.matches === true ? "✓" : reconciliation.matches === false ? "— mismatch" : "— needs review"}</p>}
@@ -124,6 +126,40 @@ function ResultPage() {
     })}
     {comparison.findings.some((f) => f.disposition === "no_contract") && <section className="mt-8 border-t border-border pt-6"><h2 className="text-xl font-semibold">No contract price – review</h2><div className="mt-4 divide-y divide-border">{comparison.findings.filter((f) => f.disposition === "no_contract").map((f) => <div key={f.line_id} className="py-4"><h3 className="break-words font-medium">{f.invoice_item ?? f.item}</h3><p className="mt-1 font-mono text-sm">{formatCurrency(f.charged, data.bill.currency)}</p>{f.order_no && <p className="mt-1 break-all text-xs text-muted-foreground">Reference: {f.order_no}</p>}</div>)}</div></section>}
     {(missingDraft || outdatedDraft) && <Button variant="signal" className="mt-6" disabled={busy} onClick={draft}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{outdatedDraft ? "Update message" : "Write message"}</Button>}
+    <AskQuestion billId={billId} />
+  </main>;
+}
+
+function LabResults({ data, billId, busy, draft }: { data: Awaited<ReturnType<typeof getCheckResult>>; billId: string; busy: boolean; draft: () => Promise<void> }) {
+  const [showIncluded, setShowIncluded] = useState(false);
+  const comparison = data.bill.comparison_result;
+  if (!comparison) return null;
+  const summary = invoiceSummary(comparison.findings);
+  const amount = (value: string | null | undefined) => formatCurrency(value, data.bill.currency);
+  const reconciliation = comparison.reconciliation;
+  const review = summary.buckets.find((b) => b.key === "review");
+  const reviewMessage = data.messages.find((m) => m.draft_version === REVIEW_DRAFT_VERSION);
+  const needDraft = (!!review?.count && !reviewMessage) || comparison.findings.some((f) => f.flagged && !data.messages.some((m) => m.line_id === f.line_id));
+  const taxWarnings = comparison.issues.filter((i) => !i.startsWith("No contract price"));
+  const checks = reconciliation ? [
+    { label: "items", value: reconciliation.items_total, matches: reconciliation.matches },
+    { label: "tax", value: reconciliation.tax_total, matches: reconciliation.tax_matches },
+    { label: "credits", value: reconciliation.credits_total == null ? null : `-${reconciliation.credits_total}`, matches: reconciliation.credits_matches },
+    { label: "total", value: reconciliation.total, matches: reconciliation.total_matches },
+  ] : [];
+  return <main className="mx-auto max-w-3xl px-4 py-10">
+    <div className="flex flex-wrap items-center justify-between gap-4"><p className="font-mono text-xs uppercase text-muted-foreground">BillShield / Lab invoice result</p><Button asChild variant="outline" size="sm"><Link to="/new">New check</Link></Button></div>
+    <header className="mt-8"><div className="flex items-start gap-3">{summary.overcharge_count ? <AlertTriangle className="mt-1 h-7 w-7 shrink-0 text-destructive" /> : <CheckCircle2 className="mt-1 h-7 w-7 shrink-0 text-success" />}<h1 className="min-w-0 break-words text-3xl font-bold">{summary.overcharge_count ? `${summary.overcharge_count} overcharge${summary.overcharge_count === 1 ? "" : "s"} found – ${amount(summary.overcharge_total)}` : "No overcharges found"}</h1></div>{data.bill.issuer && <p className="mt-3 break-words text-muted-foreground">{data.bill.issuer}</p>}<p className="mt-2 text-xs text-muted-foreground">Checked on {comparison.checked_on}</p></header>
+    <section className="mt-6 border-y border-border py-5" aria-label="Invoice summary">
+      <dl className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">{summary.buckets.filter((b) => b.count || ["matches", "overcharged", "staged", "included", "review"].includes(b.key)).map((b) => <div key={b.key} className="min-w-0"><dt className="text-sm text-muted-foreground">{b.label}</dt><dd className="mt-1 font-mono text-sm">{b.count} item{b.count === 1 ? "" : "s"} · {amount(b.total)}{b.key === "overcharged" && b.count > 0 && <span className="block text-destructive">Overcharge {amount(summary.overcharge_total)}</span>}</dd></div>)}</dl>
+      <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 border-t border-border pt-4 font-mono text-sm" aria-label="Reconciliation">{checks.map((check) => <span key={check.label} className={check.matches === false ? "text-destructive" : "text-foreground"}>{check.label} {check.label === "credits" && reconciliation?.credits_total != null ? `−${amount(reconciliation.credits_total)}` : amount(check.value)} {check.matches === true ? "✓" : check.matches === false ? "— mismatch" : "— unverified"}</span>)}</div>
+      {taxWarnings.length > 0 && <div className="mt-4 border-l-2 border-destructive pl-3">{taxWarnings.map((issue) => <p key={issue} className="mt-2 break-words text-sm text-muted-foreground">{issue}</p>)}</div>}
+      {!!review?.count && <div className="mt-5 border-t border-border pt-4"><h2 className="font-semibold">No contract price – review</h2><ul className="mt-3 space-y-3">{review.items.map((f) => <li key={f.line_id} className="min-w-0"><p className="break-words text-sm font-medium">{f.invoice_item ?? f.item}</p><p className="mt-1 break-words font-mono text-xs text-muted-foreground">Order {f.order_no ?? "not provided"} · {amount(f.charged)}</p></li>)}</ul></div>}
+    </section>
+    <div className="mt-6">{summary.buckets.filter((b) => b.count > 0 && (b.key !== "included" || showIncluded)).map((b) => <details key={b.key} className="border-b border-border py-4"><summary className="cursor-pointer break-words text-sm font-semibold">{b.label} <span className="font-mono font-normal text-muted-foreground">({b.count}) · {amount(b.total)}</span></summary><div className="mt-4 divide-y divide-border">{b.items.map((f) => <div key={f.line_id} className="min-w-0 py-4"><h3 className="break-words font-medium">{f.invoice_item ?? f.item}</h3><p className="mt-2 break-words font-mono text-sm">Order {f.order_no ?? "not provided"} · {amount(f.charged)}</p>{["matches", "overcharged", "below"].includes(b.key) && <p className="mt-3 break-words font-mono text-sm">{amount(f.charged)} − {amount(f.promised)} = {amount(f.overcharge)}{b.key === "overcharged" ? " overcharge" : b.key === "below" ? " below list" : " difference"}</p>}{b.key === "staged" && <p className="mt-3 text-sm text-muted-foreground">Staged – check when order completes</p>}{b.key === "not_comparable" && <p className="mt-3 text-sm text-muted-foreground">No fixed contract price to compare</p>}{f.flagged && data.messages.filter((m) => m.line_id === f.line_id).map((m) => <MessageEditor key={m.id} message={m} billId={billId} contactName={m.sent_to ?? data.bill.issuer ?? "the vendor"} />)}</div>)}</div></details>)}</div>
+    {!!summary.buckets.find((b) => b.key === "included")?.count && <Button variant="ghost" size="sm" className="mt-4" onClick={() => setShowIncluded((value) => !value)}>{showIncluded ? "Hide" : "Show"} included items</Button>}
+    {reviewMessage && <section className="mt-8 border-t border-border pt-6"><MessageEditor key={reviewMessage.id} message={reviewMessage} billId={billId} contactName={`${reviewMessage.sent_to ?? data.bill.issuer ?? "the vendor"} billing team`} /></section>}
+    {needDraft && <Button variant="signal" className="mt-6" disabled={busy} onClick={draft}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Write message</Button>}
     <AskQuestion billId={billId} />
   </main>;
 }
