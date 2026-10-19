@@ -24,7 +24,7 @@
 - [x] Test the reset link rules and verify the request, page states and save call.
 
 # Lab invoice fixes
-- [ ] Preserve order references through review, results and messages.
-- [ ] Handle included items, grouped confirmations and crown material matching.
-- [ ] Show unmatched lines separately and top-level reconciliation.
-- [ ] Run rule tests and verify the signed-in review-to-result flow.
+- [x] Preserve order references through review, results and messages.
+- [x] Handle included items, grouped confirmations and crown material matching.
+- [x] Show unmatched lines separately and top-level reconciliation.
+- [x] Run rule tests and verify the signed-in review-to-result flow.
