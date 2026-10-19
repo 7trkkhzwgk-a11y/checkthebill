@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { confirmCheck, generateCheckDrafts } from "@/lib/comparison.functions";
+import { matchInvoiceItems, isComparablePromise, type ReviewedLine, type ReviewedPromise } from "@/lib/comparison";
 
 export const Route = createFileRoute("/_authenticated/check/$billId")({
   head: () => ({
@@ -74,7 +75,7 @@ function CheckPage() {
         if (line.type !== "charge" && line.type !== "credit") throw new Error("Choose charge or credit for each transaction.");
         return { ...line, type: line.type };
       });
-      await confirm({ data: { billId, issuer, billTotal, currency, lines: validLines, promises: proms, confirmedMatches } });
+      await confirm({ data: { billId, issuer, billTotal, currency, lines: validLines, promises: proms, confirmedMatches: matchOverrides } });
       setConfirmed(true);
       try { await draft({ data: { billId } }); }
       catch (error) { toast.error(error instanceof Error ? error.message : "The maths is saved, but the message couldn't be written."); }
