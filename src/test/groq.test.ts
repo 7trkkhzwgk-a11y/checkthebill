@@ -9,7 +9,11 @@ describe("Groq request policy", () => {
     vi.stubGlobal("fetch", fetch);
     const usage = vi.fn();
     expect(await groqCompletion("test-only", TEXT_MODEL, "Facts only", "Synthetic question", false, usage)).toBe("Synthetic answer");
-    expect(JSON.parse(fetch.mock.calls[0]?.[1].body).model).toBe("openai/gpt-oss-120b");
+    const sent = JSON.parse(fetch.mock.calls[0]?.[1].body);
+    expect(sent.model).toBe("openai/gpt-oss-120b");
+    expect(sent.max_tokens).toBe(16000);
+    expect(sent.reasoning_effort).toBe("low");
+    expect(sent.stream).toBe(false);
     expect(usage).toHaveBeenCalledWith(37, TEXT_MODEL);
   });
   it("sends images to the vision model and text-only batches to the text model", () => {
