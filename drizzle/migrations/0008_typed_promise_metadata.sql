@@ -1,0 +1,2 @@
+ALTER TABLE public.promises ADD COLUMN typed_details jsonb;
+COMMENT ON COLUMN public.promises.typed_details IS 'Masked structured verbal-promise fields; null for uploaded documents. Existing owner RLS applies.';

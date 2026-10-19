@@ -57,6 +57,13 @@
       "when": 1792375255104,
       "tag": "0007_groq_price_list_cache_and_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792380541591,
+      "tag": "0008_typed_promise_metadata",
+      "breakpoints": true
     }
   ]
 }
