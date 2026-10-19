@@ -9,6 +9,9 @@ const line = z.object({
   type: z.enum(["charge", "credit"]).nullable(),
   reference_no: z.string().nullable(),
   bank_ref: z.string().nullable(),
+  order_no: z.string().nullable().optional(),
+  tax_amount: z.number().nullable().optional(),
+  total_amount: z.number().nullable().optional(),
 });
 const promise = z.object({
   pnr: z.string().nullable().optional(),
@@ -20,12 +23,15 @@ const promise = z.object({
   bank_ref: z.string().nullable(),
   promised_on: z.string().nullable(),
   status_text: z.string().nullable(),
+  notes: z.string().nullable().optional(),
 });
 export const extractionSchema = z.object({
   currency: z.string().nullable().optional(),
   issuer: z.string().nullable(),
   source: z.string().nullable(),
   bill_total: z.number().nullable(),
+  orders_subtotal: z.number().nullable().optional(),
+  sales_tax: z.number().nullable().optional(),
   bill_lines: z.array(line),
   promise_kind: z.enum(["refund", "contract", "price_list"]),
   refund: promise.nullable(),
@@ -59,9 +65,11 @@ export function normalizeExtraction(ex: Extraction) {
     source: maskSensitive(ex.source),
     promise_kind: ex.promise_kind,
     bill_total: ex.bill_total,
+    orders_subtotal: ex.orders_subtotal ?? null,
+    sales_tax: ex.sales_tax ?? null,
     bill_lines: ex.bill_lines
       .filter((l) => l.kind === "transaction" && (l.type === "charge" || l.type === "credit") && !summaryLabel.test(l.description?.trim() ?? ""))
-      .map(({ kind: _kind, ...l }) => ({ ...l, date: toDate(l.date), description: maskSensitive(l.description), reference_no: maskSensitive(l.reference_no, "identifier"), bank_ref: maskSensitive(l.bank_ref, "identifier") })),
-    promise_rows: rows.map((p) => ({ ...p, pnr: maskSensitive(p.pnr ?? null, "identifier"), item: maskSensitive(p.item), status_text: maskSensitive(p.status_text), reference_no: maskSensitive(p.reference_no, "identifier"), transaction_id: maskSensitive(p.transaction_id, "identifier"), bank_ref: maskSensitive(p.bank_ref ?? "", "identifier"), promised_on: toDate(p.promised_on) })),
+      .map(({ kind: _kind, ...l }) => ({ ...l, date: toDate(l.date), description: maskSensitive(l.description), reference_no: maskSensitive(l.reference_no, "identifier"), bank_ref: maskSensitive(l.bank_ref, "identifier"), order_no: maskSensitive(l.order_no ?? null, "identifier"), tax_amount: l.tax_amount ?? null, total_amount: l.total_amount ?? null })),
+    promise_rows: rows.map((p) => ({ ...p, pnr: maskSensitive(p.pnr ?? null, "identifier"), item: maskSensitive(p.item), status_text: maskSensitive(p.status_text), notes: maskSensitive(p.notes ?? null), reference_no: maskSensitive(p.reference_no, "identifier"), transaction_id: maskSensitive(p.transaction_id, "identifier"), bank_ref: maskSensitive(p.bank_ref ?? "", "identifier"), promised_on: toDate(p.promised_on) })),
   };
 }
