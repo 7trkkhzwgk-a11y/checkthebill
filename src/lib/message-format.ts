@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import type { Finding, ReviewedPromise } from "@/lib/comparison";
+import { typedDetailsSchema } from "@/lib/typed-promise";
 
 export const DRAFT_VERSION = 3;
 export function currencyCode(value: string | null | undefined): string | null {
@@ -19,7 +20,9 @@ const actualName = (value: string | null | undefined) => {
   const name = value?.replace(/\s+(?:(?:cancellation\s*\/\s*)?refund\s+confirmation|contract|price list|invoice|statement)$/i, "").trim();
   return name && !/^(?:refund(?: confirmation)?|contract|price list|promise|bill|invoice|merchant|bank|vendor)$/i.test(name) ? name : null;
 };
-export function presentFinding(f: Finding, promise: Partial<Pick<ReviewedPromise, "source" | "bank_ref" | "pnr" | "item">> | undefined, issuer: string | null, currency: string | null): Finding {
+export function presentFinding(f: Finding, promise: (Partial<Pick<ReviewedPromise, "source" | "bank_ref" | "pnr" | "item">> & { typed_details?: unknown }) | undefined, issuer: string | null, currency: string | null): Finding {
+  const parsed = typedDetailsSchema.safeParse(promise?.typed_details);
+  const evidence = parsed.success ? parsed.data : undefined;
   const source = actualName(promise?.source);
   const billIssuer = actualName(issuer);
   // Rehydrate routing from saved promise facts, never from the bill's display name.
@@ -30,7 +33,7 @@ export function presentFinding(f: Finding, promise: Partial<Pick<ReviewedPromise
   const pnr = promise?.pnr ?? f.pnr ?? promise?.item?.match(/\bPNR(?:\s*(?:no\.?|number|id))?\s*[:#-]?\s*([A-Z0-9-]+)/i)?.[1] ?? null;
   const detectedCurrency = currencyCode(currency) ?? f.currency ?? (/\bIRCTC\b/i.test(source ?? "") ? "INR" : null);
   const missing_amount = f.missing_amount ?? (f.kind === "refund" && f.promised !== null && f.credit_found !== null ? new Decimal(f.promised).minus(f.credit_found).toFixed(2) : null);
-  const result = { ...f, recipient, bank_ref, currency: detectedCurrency, contact_name, item: promise?.item ?? f.item ?? null, pnr, missing_amount };
+  const result = { ...f, recipient, bank_ref, currency: detectedCurrency, contact_name, item: promise?.item ?? f.item ?? null, pnr, missing_amount, promise_context: evidence?.promise_note ?? f.promise_context, promise_sources: evidence?.field_sources ?? f.promise_sources, promise_document: evidence?.document_name ?? f.promise_document };
   const amount = (v: string | null) => formatCurrency(v, detectedCurrency);
   result.flag_reason = !f.flagged ? null : f.typed_promise ? "The bill differs from the promise you entered. Ask the company to confirm." : f.kind === "refund"
     ? `Refund promised: ${amount(f.promised)}. Credit found: ${amount(f.credit_found)}. ${amount(f.missing_amount ?? new Decimal(f.promised ?? 0).minus(f.credit_found ?? 0).toFixed(2))} is still missing.`
