@@ -32,6 +32,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
       let output;
       let cached = false;
       let readBy: "code" | "ai" = "ai";
+      let promiseDetails: import("@/lib/typed-promise").TypedDetails | undefined;
       if (data.part === "price_list") {
         const existing = await context.supabase.from("price_list_cache").select("extraction").eq("user_id", context.userId).eq("content_hash", `${CACHE_VERSION}-${hash}`).maybeSingle();
         if (existing.error) throw new Error("Couldn't read the saved price list.");
@@ -47,14 +48,25 @@ export const readInvoicePart = createServerFn({ method: "POST" })
         } else {
           const { maskSensitive } = await import("@/lib/mask");
           const note = data.part === "refund_promise" || data.part === "price_list" ? maskSensitive(data.userNote) ?? undefined : undefined;
-          output = maskedExtraction(await extractInvoicePart(file, data.part, data.previousOrder ?? null, usageSink(context.supabase, context.userId, data.part, { readingId: data.readingId }), note));
+          if (data.part === "refund_promise" || data.part === "price_list") {
+            const { readPromiseFile, typedExtraction } = await import("@/lib/typed-promise.server");
+            const read = await readPromiseFile(file, note, usageSink(context.supabase, context.userId, data.part, { readingId: data.readingId }));
+            const result = typedExtraction(read, "");
+            output = result.extraction;
+            if (data.part === "refund_promise") {
+              output.promise_kind = "refund";
+              output.refund = output.refund ?? output.agreed_items[0] ?? null;
+              output.agreed_items = [];
+            }
+            promiseDetails = { ...result.details, source_mode: "document", document_read_failed: !read };
+          } else output = maskedExtraction(await extractInvoicePart(file, data.part, data.previousOrder ?? null, usageSink(context.supabase, context.userId, data.part, { readingId: data.readingId })));
         }
-        if (data.part === "price_list") {
+        if (data.part === "price_list" && !promiseDetails?.document_read_failed) {
           const { error } = await context.supabase.from("price_list_cache").upsert({ user_id: context.userId, content_hash: `${CACHE_VERSION}-${hash}`, extraction: JSON.parse(JSON.stringify(output)), file_link: data.sourcePath ?? data.file.path }, { onConflict: "user_id,content_hash" });
           if (error) throw new Error("Couldn't save the structured price list.");
         }
       }
-      const { error } = await context.supabase.storage.from("documents").upload(cachePath, new Blob([JSON.stringify(output)], { type: "application/json" }), { contentType: "application/json", upsert: true });
+      const { error } = await context.supabase.storage.from("documents").upload(cachePath, new Blob([JSON.stringify({ extraction: output, promiseDetails })], { type: "application/json" }), { contentType: "application/json", upsert: true });
       if (error) throw new Error("Couldn't save the privately cached reading.");
       return { ok: true as const, cachePath, lastOrder: output.bill_lines.at(-1)?.order_no ?? null, cached, readBy, sections: data.part === "price_list" ? priceListSectionCounts(output.agreed_items) : [] };
     } catch (error) {
@@ -64,7 +76,7 @@ export const readInvoicePart = createServerFn({ method: "POST" })
     }
   });
 
-const finishSchema = z.object({ bill: documentSchema, promise: documentSchema.optional(), typedPromise: z.string().trim().min(1).max(4000).optional(), readingId: z.string().uuid(), billType: z.enum(["refund", "lab_invoice"]), pages: z.array(z.string()).min(1), priceList: z.array(z.string()) }).refine(data => data.promise ? data.priceList.length > 0 : !!data.typedPromise && data.priceList.length === 0, "What were you promised? Upload a screenshot or type it in one line.");
+const finishSchema = z.object({ bill: documentSchema, promise: documentSchema.optional(), typedPromise: z.string().trim().min(1).max(4000).optional(), readingId: z.string().uuid(), billType: z.enum(["refund", "lab_invoice"]), pages: z.array(z.string()).min(1), priceList: z.array(z.string()) }).refine(data => !!data.promise || !!data.typedPromise, "What were you promised? Upload a screenshot or type it in one line.");
 export const finishInvoiceReading = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: z.infer<typeof finishSchema>) => finishSchema.parse(input))
@@ -76,21 +88,34 @@ export const finishInvoiceReading = createServerFn({ method: "POST" })
       const read = async (path: string) => {
         const { data: blob, error } = await context.supabase.storage.from("documents").download(path);
         if (error || !blob) throw new Error("A completed reading is missing. Read the files again.");
-        return extractionSchema.parse(JSON.parse(await blob.text()));
+        const raw = JSON.parse(await blob.text());
+        const { typedDetailsSchema } = await import("@/lib/typed-promise");
+        return { extraction: extractionSchema.parse(raw.extraction ?? raw), details: raw.promiseDetails ? typedDetailsSchema.parse(raw.promiseDetails) : undefined };
       };
       const pages = [];
-      for (const path of data.pages) pages.push(await read(path));
+      for (const path of data.pages) pages.push((await read(path)).extraction);
       const promises = [];
-      for (const path of data.priceList) promises.push(await read(path));
+      let documentDetails: import("@/lib/typed-promise").TypedDetails | undefined;
+      for (const path of data.priceList) {
+        try { const result = await read(path); promises.push(result.extraction); documentDetails = result.details ?? documentDetails; }
+        catch { /* Failed promise readings never prevent manual confirmation. */ }
+      }
+      const { typedExtraction } = await import("@/lib/typed-promise.server");
       let typed;
       let typedRead: Awaited<ReturnType<typeof import("@/lib/typed-promise.server").readTypedPromise>> = null;
       if (data.typedPromise) {
         step = "Reading the promise you entered";
-        const { readTypedPromise, typedExtraction } = await import("@/lib/typed-promise.server");
+        const { readTypedPromise } = await import("@/lib/typed-promise.server");
         const { usageSink } = await import("@/lib/ai/usage.server");
         // Never throws: a failed reading becomes a plain promise note for the user to fill in.
         typedRead = await readTypedPromise(data.typedPromise, usageSink(context.supabase, context.userId, "typed_promise", { readingId: data.readingId }));
         if (!data.promise) { typed = typedExtraction(typedRead, data.typedPromise); promises.push(typed.extraction); }
+      }
+      if (!promises.length) {
+        const fallback = typedExtraction(null, data.typedPromise ?? "");
+        if (data.billType === "refund") { fallback.extraction.promise_kind = "refund"; fallback.extraction.refund = fallback.extraction.agreed_items[0] ?? null; fallback.extraction.agreed_items = []; }
+        promises.push(fallback.extraction);
+        documentDetails = { ...fallback.details, document_read_failed: true, source_mode: "document" };
       }
       const firstPromise = promises[0];
       if (!firstPromise) throw new Error("Promise reading is missing.");
@@ -98,18 +123,32 @@ export const finishInvoiceReading = createServerFn({ method: "POST" })
       const combined = combineInvoicePages(pages, promise);
       if ((typed && typed.details.kind === "refund") || (!typed && data.billType === "refund")) { combined.promise_kind = "refund"; combined.refund = promises.find((p) => p.refund)?.refund ?? null; combined.agreed_items = []; }
       else if (typed) combined.promise_kind = "contract";
-      if (data.promise && data.typedPromise) {
-        // Document and typed text were read separately; typed values win and both are shown on review.
-        const { mergeTypedIntoRow } = await import("@/lib/promise-merge");
-        const { maskSensitive } = await import("@/lib/mask");
-        const note = maskSensitive(data.typedPromise) ?? "";
-        const fields = typedRead ? { item: typedRead.item, amount: typedRead.amount, date: typedRead.date, who_promised: typedRead.who_promised } : null;
-        if (combined.refund) { const merged = mergeTypedIntoRow(combined.refund, combined.source, fields, note); combined.refund = merged.row; combined.source = merged.source; }
-        else if (combined.agreed_items[0]) { const first = combined.agreed_items[0]; combined.agreed_items[0] = { ...first, notes: [first.notes, typedRead ? `Your note: ${note}` : `Promise note (not read automatically): ${note}`].filter(Boolean).join(" · ") }; }
+      const { mergePromiseFields } = await import("@/lib/promise-source");
+      const { maskSensitive } = await import("@/lib/mask");
+      const note = maskSensitive(data.typedPromise) ?? "";
+      const rows = combined.promise_kind === "refund" ? [combined.refund ?? typedExtraction(null, "").extraction.agreed_items[0]].filter((r): r is NonNullable<typeof r> => !!r) : combined.agreed_items;
+      const metadata: import("@/lib/typed-promise").TypedDetails[] = [];
+      const normalized = (v: string | null) => (v ?? "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+      const named = typedRead?.item ? rows.filter(row => normalized(row.item) === normalized(typedRead?.item ?? null)) : [];
+      const target = rows.length === 1 ? rows[0] : named.length === 1 ? named[0] : undefined;
+      if (!target && typedRead && (typedRead.item || typedRead.amount != null || typedRead.taxes.length)) {
+        const extra = typedExtraction(typedRead, note);
+        rows.push(extra.extraction.refund ?? extra.extraction.agreed_items[0] ?? { item: null, original_charge: null, promised_amount: null, reference_no: null, transaction_id: null, bank_ref: "", promised_on: null, status_text: null });
       }
+      const actualTarget = target ?? (typedRead ? rows.at(-1) : undefined);
+      for (const [index, row] of rows.entries()) {
+        const applies = row === actualTarget;
+        const fromFile = !!data.promise && (row === target || index < rows.length - (actualTarget && !target ? 1 : 0));
+        const merged = mergePromiseFields(row, combined.source, fromFile ? { item: row.item, amount: row.promised_amount, date: row.promised_on, who_promised: combined.source, taxes: documentDetails?.taxes, tax_inclusive: documentDetails?.tax_inclusive } : null, applies ? typedRead : null, note, fromFile ? data.promise?.name ?? null : null);
+        rows[index] = merged.row;
+        if (applies) combined.source = merged.source;
+        metadata.push({ ...(typed?.details ?? documentDetails ?? { kind: combined.promise_kind === "refund" ? "refund" : "price", tax_inclusive: null, taxes: [] }), ...merged.evidence, kind: combined.promise_kind === "refund" ? "refund" : "price", tax_inclusive: merged.tax_inclusive, taxes: merged.taxes.map(t => ({ ...t, taxable_amount: null })), promise_note: note, read_failed: !!data.typedPromise && !typedRead, document_read_failed: !!data.promise && (!data.priceList.length || !!documentDetails?.document_read_failed) });
+      }
+      if (combined.promise_kind === "refund") combined.refund = rows[0] ?? null;
+      else combined.agreed_items = rows;
       step = "Saving invoice check";
       const { saveExtraction } = await import("@/lib/extraction-storage.server");
-      const saved = await saveExtraction(context.supabase, context.userId, data.bill.path, data.promise?.path ?? null, data.billType, combined, typed?.details);
+      const saved = await saveExtraction(context.supabase, context.userId, data.bill.path, data.promise?.path ?? null, data.billType, combined, metadata);
       const { error: usageError } = await context.supabase.from("ai_usage").update({ bill_id: saved.billId }).eq("user_id", context.userId).eq("reading_id", data.readingId);
       if (usageError) throw new Error("Couldn't attach AI token usage to the check.");
       await context.supabase.storage.from("documents").remove([...data.pages, ...data.priceList]);

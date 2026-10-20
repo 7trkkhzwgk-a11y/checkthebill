@@ -2,8 +2,9 @@ import Decimal from "decimal.js";
 import { z } from "zod";
 import type { Comparison, Finding, ReviewedLine, ReviewedPromise } from "@/lib/comparison";
 import { formatCurrency } from "@/lib/message-format";
+import { promiseEvidenceSchema } from "@/lib/promise-source";
 
-export const typedDetailsSchema = z.object({
+export const typedDetailsSchema = promiseEvidenceSchema.extend({
   kind: z.enum(["refund", "price"]),
   tax_inclusive: z.boolean().nullable(),
   taxes: z.array(z.object({ label: z.string().max(100), rate: z.number().finite().min(0).max(100), taxable_amount: z.number().finite().nonnegative().nullable() })).max(10),

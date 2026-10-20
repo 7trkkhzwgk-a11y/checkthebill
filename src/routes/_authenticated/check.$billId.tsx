@@ -99,7 +99,7 @@ function CheckPage() {
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
-  const isTyped = proms.some(p => p.typed_details);
+  const isTyped = proms.length > 0 && proms.every(p => p.typed_details && (!p.typed_details.source_mode || p.typed_details.source_mode === "typed"));
   const isPriceList = !isTyped && proms.length > 0 && proms.every((p) => p.promise_kind === "price_list" || p.promise_kind === "contract");
   const suggestedMatches = isPriceList && !confirmed
     ? matchInvoiceItems(lines as ReviewedLine[], proms as unknown as ReviewedPromise[])
@@ -155,7 +155,12 @@ function CheckPage() {
       </div>
 
       <h2 className="mt-8 font-semibold">{isTyped ? "Promise you entered (no document)" : "Promise"}</h2>
-      {proms.map((p, i) => p.typed_details ? <TypedPromiseFields key={p.id} details={p.typed_details} lines={lines} disabled={confirmed} onChange={details => setProms(rows => rows.map((row, j) => j === i ? { ...row, typed_details: details } : row))} /> : null)}
+      {proms.map((p, i) => p.typed_details ? <div key={p.id} className="mt-3 space-y-2">
+        {(p.typed_details.read_failed || p.typed_details.document_read_failed) && <p role="status" className="text-sm text-destructive">Couldn’t read the promise automatically — please confirm it below</p>}
+        {p.typed_details.promise_note && <div className="space-y-2"><Label htmlFor={`${p.id}-promise-note`}>Promise note · from you</Label><Input id={`${p.id}-promise-note`} value={p.typed_details.promise_note} disabled={confirmed} onChange={e => setProms(rows => rows.map((row, j) => j === i && row.typed_details ? { ...row, typed_details: { ...row.typed_details, promise_note: e.target.value } } : row))} /></div>}
+        {(isTyped || p.typed_details.taxes.length > 0) && <TypedPromiseFields details={p.typed_details} lines={lines} disabled={confirmed} onChange={details => setProms(rows => rows.map((row, j) => j === i ? { ...row, typed_details: details } : row))} />}
+        {!!p.typed_details.conflicts?.length && <ul className="space-y-1 text-xs text-muted-foreground">{p.typed_details.conflicts.map(c => <li key={c.field} className="break-words">{c.field.replaceAll("_", " ")}: Document: {c.document} · You said: {c.you}</li>)}</ul>}
+      </div> : null)}
       {isPriceList && <section className="mt-3 border-y border-border py-4" aria-label="Saved price-list sections"><h3 className="text-sm font-semibold">Price list · {proms.length} rows saved</h3><dl className="mt-3 grid gap-2 sm:grid-cols-2">{priceListSectionCounts(proms).map(({ section, count }) => <div key={section} className="flex min-w-0 justify-between gap-3 text-xs"><dt className="break-words text-muted-foreground">{section}</dt><dd className="shrink-0 font-mono">{count} rows</dd></div>)}</dl></section>}
       {isPriceList ? (
         <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-card shadow-card">
@@ -168,8 +173,8 @@ function CheckPage() {
                 const comparable = isComparablePromise(p);
                 return (
                   <tr key={p.id} className={`border-b border-border last:border-0 ${comparable ? "" : "opacity-60"}`}>
-                    <td className="p-1"><Cell value={p.item ?? ""} onChange={(v) => setP(i, "item", v)} disabled={confirmed} /></td>
-                    <td className="p-1"><Cell type="number" value={p.promised_amount?.toString() ?? ""} onChange={(v) => setP(i, "promised_amount", v)} disabled={confirmed} /></td>
+                    <td className="p-1"><Cell value={p.item ?? ""} onChange={(v) => setP(i, "item", v)} disabled={confirmed} /><span className="text-xs text-muted-foreground">from {p.typed_details?.field_sources?.item === "you" ? "you" : "document"}</span></td>
+                    <td className="p-1"><Cell type="number" value={p.promised_amount?.toString() ?? ""} onChange={(v) => setP(i, "promised_amount", v)} disabled={confirmed} /><span className="text-xs text-muted-foreground">from {p.typed_details?.field_sources?.promised_amount === "you" ? "you" : "document"}</span></td>
                     <td className="p-2 text-xs text-muted-foreground">{comparable ? (p.notes ?? "—") : "Not comparable — skipped"}</td>
                   </tr>
                 );
@@ -197,6 +202,7 @@ function CheckPage() {
               ] as const).filter(([key]) => !isTyped || ["source", "item", "promised_amount", "promised_on"].includes(key)).map(([key, label, type]) => (
                 <div key={key} className="min-w-0 space-y-2">
                   <Label htmlFor={`${p.id}-${key}`}>{label}</Label>
+                  <span className="block text-xs text-muted-foreground">from {p.typed_details?.field_sources?.[key] === "you" || isTyped ? "you" : "document"}</span>
                   <Input id={`${p.id}-${key}`} type={type === "date" ? "text" : type} step={type === "number" ? "any" : undefined} className="font-mono text-sm" value={p[key] ?? ""} disabled={confirmed} onChange={(e) => setP(i, key, e.target.value)} />
                 </div>
               ))}

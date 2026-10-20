@@ -191,7 +191,7 @@ export function matchInvoiceItems(lines: (Pick<ReviewedLine, "id" | "description
 export function compareConfirmed(lines: ReviewedLine[], promises: ReviewedPromise[], today: string, options?: { orders_subtotal?: number | null; sales_tax?: number | null; bill_total?: number | null; confirmed_matches?: Record<string, string> }): Comparison {
   const billTotals = { orders_subtotal: options?.orders_subtotal ?? null, sales_tax: options?.sales_tax ?? null };
   if (!toDate(today)) throw new Error("Invalid comparison date.");
-  if (promises.length && promises.every(p => p.typed_details)) return compareTypedPromises(lines, promises, today);
+  if (promises.length && promises.every(p => p.typed_details && (!p.typed_details.source_mode || p.typed_details.source_mode === "typed"))) return compareTypedPromises(lines, promises, today);
   const findings: Finding[] = [];
   const issues: string[] = [];
   const usedCredits = new Set<string>();
