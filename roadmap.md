@@ -1,3 +1,8 @@
+# Combined promise sources
+- [ ] Keep file and text enabled together and save both; separate bounded readings with non-blocking fallback.
+- [ ] Merge typed facts over document fields with source/conflict display and instruction-note message context.
+- [ ] Test the five source combinations and failures with synthetic data; verify signed-in flow without re-reading Dandy.
+
 # Typed promises
 - [x] Add optional text entry and private structured extraction.
 - [x] Add editable typed fields, deterministic tax checks and verbal-promise messages.
