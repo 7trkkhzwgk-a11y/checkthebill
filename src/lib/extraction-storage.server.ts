@@ -20,7 +20,7 @@ export async function loadDocument(client: Client, file: StoredDocument): Promis
   return { name: file.name, mime: file.mime, base64: parts.join("") };
 }
 
-export async function saveExtraction(client: Client, userId: string, billPath: string, promisePath: string | null, billType: "refund" | "lab_invoice", input: Extraction, typedDetails?: TypedDetails) {
+export async function saveExtraction(client: Client, userId: string, billPath: string, promisePath: string | null, billType: "refund" | "lab_invoice", input: Extraction, typedDetails?: TypedDetails | TypedDetails[]) {
   const ex = normalizeExtraction(input);
   const { data: bill, error: billErr } = await client.from("bills").insert({
     user_id: userId, issuer: ex.issuer, currency: ex.currency, bill_total: ex.bill_total,
@@ -37,10 +37,10 @@ export async function saveExtraction(client: Client, userId: string, billPath: s
       if (error) throw new Error("Couldn't save invoice lines.");
     }
     if (ex.promise_rows.length) {
-      const { error } = await client.from("promises").insert(ex.promise_rows.map((l) => ({
+      const { error } = await client.from("promises").insert(ex.promise_rows.map((l, index) => ({
         user_id: userId, bill_id: bill.id, source: ex.source, ...l,
         promise_kind: ex.promise_kind, file_link: promisePath,
-        ...(typedDetails ? { typed_details: typedDetails } : {}),
+        ...(typedDetails ? { typed_details: JSON.parse(JSON.stringify(Array.isArray(typedDetails) ? typedDetails[index] ?? null : typedDetails)) } : {}),
       })));
       if (error) throw new Error("Couldn't save the price list.");
     }
